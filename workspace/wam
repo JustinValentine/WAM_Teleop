@@ -17,6 +17,9 @@
 #   wam ft-cal [file]  fit the gripper beyond the follower's force/torque
 #                sensor from the latest (or the given) follower recording made
 #                with --ft log (wam_settings.sh, "Force/torque sensor")
+#   wam ft-zero  take the force/torque sensor's zero again mid-teleop, against
+#                its drift ('z' in the follower's pane too): nothing may touch
+#                the gripper for the second it takes
 #
 # Each pane's output is saved in pane_logs/<start time>_<pane>.log.
 # Starting one demo while the other runs offers to stop it first. The arms
@@ -501,6 +504,42 @@ position_position() {
 	esac
 }
 
+# The force/torque sensor's zero, again, from any terminal: types 'z' at the
+# follower's prompt, as its own key does (follower.cpp: half a second's average
+# after 0.3 s, with the sensor's torques faded out and back in around it, linked
+# or not). The follower answers in its pane; the last lines are shown here.
+ft_zero() {
+	local pane
+	if ! running "$P_FOLLOWER"; then
+		echo "The follower is not running."
+		return 1
+	fi
+	pane=$(pane_named follower)
+	if [ -z "$pane" ]; then
+		echo "No follower pane in the wam session: type z in the follower's own terminal."
+		return 1
+	fi
+	if ! docker exec "$CONTAINER" pgrep -af "$P_FOLLOWER" | grep -q -- '--ft '; then
+		echo "The follower was started without --ft (FOLLOWER_EXTRA in wam_settings.sh): it is not reading the sensor."
+		return 1
+	fi
+	echo "Keep clear of the gripper ..."
+	send_at_prompt "$pane" '>>>' z
+	case $? in
+	0)
+		sleep 1.5   # 0.3 s to settle, 0.5 s of readings
+		tmux capture-pane -p -t "$pane" | sed '/^[[:space:]]*$/d' | grep -a 'Force/torque sensor' | tail -n 1 ;;
+	2)
+		echo "The follower is not at its >>> prompt; its pane ends with:"
+		echo "    $(last_line "$pane")"
+		echo "  Answer it there (wam attach), then type z in its pane."
+		return 1 ;;
+	*)
+		echo "z did not arrive: type it in the follower's pane (wam attach)."
+		return 1 ;;
+	esac
+}
+
 # The navigation controller's buttons as they are pressed (the numbers are
 # joy_node's, as in config/hand_nav_controller.yaml).
 joytest() {
@@ -596,6 +635,7 @@ case "${1:-}" in
 teleop) start_teleop ;;
 log) shift; show_log "$@" ;;
 ft-cal) shift; ft_cal "$@" ;;
+ft-zero) ft_zero ;;
 saber) start_saber ;;
 stop) stop_all "${2:-}" ;;
 status) status ;;

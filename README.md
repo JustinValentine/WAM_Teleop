@@ -355,7 +355,8 @@ None of this has run on the robots; everything is off unless asked for.
 `c` (4C off) turns the wrist's force channel and the tether off with the force
 channels, and back on, fading over 1 s: the A/B on the same arms. `w` in the
 leader's pane sets gain and deadband live; `z` in the follower's takes the
-sensor's zero again.
+sensor's zero again, and `wam ft-zero` does the same from any terminal (the
+sensor drifts: nothing may touch the gripper for the second it takes).
 
 **The gripper's calibration (`--ft-tool`).** The sensor reads the gripper's
 weight too, and that changes as the wrist turns (a 1.2 kg hand: up to 23 N
