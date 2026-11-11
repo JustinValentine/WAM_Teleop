@@ -55,12 +55,21 @@ FT_ORIGIN_Z=""   # m from the tool plate to the sensor's measuring origin, if it
 # 2026-11-11: the leader on the cable model (WAM 153's fit of that night), 0.2 of its friction in
 # the feedforward; raise it live with the key m. First use in a linked teleop: "" goes back to legacy.
 # --ki-scale 0 (2026-11-11, user): no integral action in J1-J4's position coupling, on both arms.
-LEADER_EXTRA="--model cable --ff-friction 0.2 --ki-scale 0"
+# 2026-11-11, for the run after the first --ft arm session. One new thing at the start, two by key:
+#   --reference age (both arms; first use on the arms): each arm advances the other's position by
+#     the packet's age, which removes the coupling's drag of kp * age (in the 15:15 session
+#     1.0 / 1.2 / 0.4 / 0.3 Nm on the leader's J1-J4 at 0.5 rad/s, 0.7 / 0.8 / 0.3 / 0.2 on the
+#     follower's) and its change from one start to the next. Without it: drop it from both lines.
+#   the leader's wrist force from the follower's sensor (the follower's --ft all sends it): starts
+#     at gain 0; in the leader's pane  w  then  0.2 0  switches it on. First use on the arms.
+#   the leader's friction share: in the leader's pane  m  then  0.3 0  (0.4, 0.5), arm at rest.
+# The settings of the first --ft arm session: wam_settings.sh.bak-20261111-ft-arm.
+LEADER_EXTRA="--model cable --ff-friction 0.2 --ki-scale 0 --reference age"
 # 2026-11-11: the force the follower sends the leader for J1-J4 is the force/torque sensor's
 # (--ft arm), with the gripper's weight removed by the calibration `wam ft-cal` wrote that day.
 # First session with it: 16:08 that day. Back to recording the sensor only:
 # FOLLOWER_EXTRA="--ft log --ki-scale 0".
-FOLLOWER_EXTRA="--ft arm --ft-tool $FT_TOOL_IN --ki-scale 0"
+FOLLOWER_EXTRA="--ft all --ft-tool $FT_TOOL_IN --ki-scale 0 --reference age"
 
 # Force/torque sensor on the follower, and the wrist (wam_teleop/README.md,
 # "Force/torque sensor and the wrist"). Not run on the robots yet: one step at

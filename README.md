@@ -324,6 +324,16 @@ this update uses the law as at IROS); try one at a time:
 | `--estimator matched` | The external-torque estimate with the commanded torque and the model's other terms passed through the same filter as the model's acceleration (`src/lib/estimator_core.h`). The legacy estimate subtracts a 4 Hz-filtered inertial torque from the unfiltered commanded torque, so above about 3 Hz it is the arm's own position-controller torque, which the other arm then applies. `--estimator-filter hp,lp` sets the two corners in rad/s (default 25,50, the existing acceleration filter: the estimate is then limited to about 4 Hz). The feedforward is not changed. |
 | `--ki-scale s` | J1-J4's integral gain times s. With the arm at rest the integrator keeps moving the commanded torque inside the stiction band, which the estimate reports as an external torque. |
 
+On the arms (odin, 2026-11-11): `--ki-scale 0` on both arms from 15:15 on;
+`--reference age` on both arms from the session started at 16:37. Offline, on
+that day's 15:15 recording, the packet's age was steady to 0.01-0.02 ms from
+one cycle to the next (2.37 ms at the leader, 1.63 ms at the follower; 1.34
+and 0.66 ms in the next start), the aged reference would have removed a drag
+of 1.0 / 1.2 / 0.4 / 0.3 Nm on the leader's J1-J4 and 0.7 / 0.8 / 0.3 / 0.2 Nm
+on the follower's at 0.5 rad/s, and added 0.02-0.05 Nm rms of torque above
+30 Hz to the 0.2-0.3 Nm already there. `--estimator matched` has not run on
+the arms.
+
 `low_latency_tests` checks the link, the mode, the aged reference, the
 recorder, the estimator's arithmetic and the thread setup without libbarrett;
 `wam8g_loopback_tests` (and `_legacy`) also run the mode over the link, the
@@ -344,9 +354,19 @@ is measured instead (`src/lib/ft_core.h` has the arithmetic and the reasons).
 Everything is off unless asked for. On the arms so far (odin, 2026-11-11, the
 slax follower with its skid gripper): reading the sensor in the loop (every
 cycle, at most 0.27 ms of loop time), `wam ft-zero`, the gripper's calibration
-(`wam ft-cal`, two runs) and a first teleop session with `--ft arm`. The
-wrist's force channel (`--ft wrist`, `leader_wam8g --wrist-force`), the
-tether and `--wrist-friction` have not run on the arms.
+(`wam ft-cal`, two runs), a teleop session with `--ft arm` (16:08, 21 minutes
+linked) and one with `--ft all` (16:37), in which the leader's wrist force
+gain was raised by key from 0 to 0.2 and then 0.5. `--wrist-friction` has not
+run on the arms.
+
+In the `--ft arm` session, against the session before it with the model's
+estimate as the follower's force (15:15, the same force gain 0.4): the
+leader's joint velocity between 5 and 20 Hz was 2.8 / 4.2 / 6.9 / 5.8 mrad/s
+rms on J1-J4 against 7.6 / 16.3 / 14.2 / 17.8, the lightly damped swings at 8
+and 12 Hz were gone, and the force the leader received no longer had the
+follower's friction in it (its mean along the motion about 0). In free motion
+the sensor read 1.6 N (median) after the gripper's weight was removed, under
+2.9 N for nine tenths of the time.
 
 **Running the teleop with the sensor's force (`--ft arm`).** Both arms keep
 the 4C law; what changes is where the follower's force comes from: the
@@ -373,7 +393,13 @@ alone). With the launcher (`workspace/wam`, `workspace/wam_settings.sh`):
 As run that day: force gain 0.4 on both arms, 35 Hz notch, no integral action
 (`--ki-scale 0`, and ki 0 in the follower's configuration), the leader on the
 cable model with 0.2 of its friction fed forward, the follower on the legacy
-model with slax's parameters. What the gripper's calibration leaves (about
+model with slax's parameters. `workspace/wam_settings.sh` is the 16:37
+session's: `--reference age` on both arms, `--ft all` on the follower, the
+leader's wrist force at 0 until `w` raises it; in that session the leader's
+friction share was also raised by key (`m`) from 0.2 to 0.5 and the wrist
+force gain to 0.5. The operator's note on it: the best the teleop has felt,
+with an artifact in the arm's redundant (null-space) motion that is not yet
+analysed. What the gripper's calibration leaves (about
 1 N, and up to 2 N more near the ends of J7's travel, see below) appears to
 the leader as a contact force.
 

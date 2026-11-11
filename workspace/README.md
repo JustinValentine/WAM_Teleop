@@ -24,6 +24,12 @@ is the slax arm with the skid gripper and F/T sensor
 (`config/follower-slax-skid-ft/`, `src/lib/follower_beta_slax_skid_hand.h`).
 The parameters of the other base arm, used until then, are kept in
 `src/lib/iros_base/`.
-`wam_settings.sh` is as it ran that afternoon: 4C with force gain 0.4, no
-integral action, and the follower's force on J1-J4 taken from its
-force/torque sensor (`--ft arm`, the package README's section on the sensor).
+`wam_settings.sh` is as the last session of that afternoon started (16:37):
+4C with force gain 0.4, no integral action, `--reference age` on both arms,
+and the follower's force taken from its force/torque sensor (`--ft all`: J1-J4,
+and the wrist once the leader's `w` key gives it a gain; the package README's
+section on the sensor).
+`tools/dyn_feel/params-wam153-20261111/` holds the parameter sets identified
+on WAM 153 that night, for `wam8g_dyn_feel` (the cable model from runs 2+3
+and from runs 2+3+4, the 30-parameter model with and without its Coulomb
+terms) and the tool's check outputs for them.

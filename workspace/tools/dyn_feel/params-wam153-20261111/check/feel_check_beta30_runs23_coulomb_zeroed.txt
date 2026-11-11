@@ -1,0 +1,17 @@
+Parameters: deliver/beta30_wam153_runs23_coulomb_zeroed.dat
+  30 base parameters (regressor_W.h)
+  joint viscous fv (Nm s/rad): 1.038 2.026 1.051 0.3866
+  joint Coulomb fc (Nm):       0 0 0 0
+What the gravity term would add at level 100 % (the wrist at 0):
+  J1-J4 at   0.00   0.00   0.00   0.00 rad: model gravity    0.00    0.11    0.00    1.24 Nm
+      minus the calibration's (wrist at 0):             0.00    0.58    0.00    0.01 Nm
+  J1-J4 at   0.00  -1.57   0.00   1.57 rad: model gravity    0.00   24.69   -0.15    1.24 Nm
+      minus the calibration's (wrist at 0):             0.00    0.67    0.46    0.01 Nm
+  J1-J4 at   0.00  -1.95   0.00   3.00 rad: model gravity   -0.00   15.35   -0.14   -6.86 Nm
+      minus the calibration's (wrist at 0):            -0.00    0.47    0.43    0.08 Nm
+  J1-J4 at   0.50  -1.00   0.50   2.00 rad: model gravity    0.00   13.22   -3.98   -6.33 Nm
+      minus the calibration's (wrist at 0):             0.00    0.79    0.47    0.07 Nm
+  J1-J4 at   0.00   1.00   0.00   1.00 rad: model gravity   -0.00  -28.69    0.13   -8.35 Nm
+      minus the calibration's (wrist at 0):             0.00   -0.17   -0.39    0.07 Nm
+  J1-J4 at   1.00  -1.60  -1.00   2.00 rad: model gravity   -0.00   21.14    7.98   -1.09 Nm
+      minus the calibration's (wrist at 0):             0.00    0.67   -0.02    0.02 Nm
