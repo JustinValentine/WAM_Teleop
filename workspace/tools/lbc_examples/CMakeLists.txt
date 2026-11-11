@@ -1,0 +1,18 @@
+# The CANopen library's own example programs (libbarrett-canopen/examples), built
+# against the library the leader uses (/opt/barrett-canopen in wam-ros:4c).
+cmake_minimum_required(VERSION 3.5)
+project(lbc_examples CXX)
+set(CMAKE_BUILD_TYPE RelWithDebInfo)
+set(CMAKE_CXX_STANDARD 14)
+set(P /opt/barrett-canopen)
+include(${P}/share/barrett/barrett-config.cmake)
+list(REMOVE_ITEM BARRETT_LIBRARIES barrett)
+find_package(Curses REQUIRED)
+set(SRC ${CMAKE_CURRENT_SOURCE_DIR}/../../libbarrett-canopen/examples)
+foreach(t ex04_display_basic_info)
+  add_executable(${t} ${SRC}/${t}.cpp)
+  target_include_directories(${t} BEFORE PRIVATE ${BARRETT_INCLUDE_DIRS} ${SRC} ${CURSES_INCLUDE_DIR})
+  target_compile_options(${t} PRIVATE ${BARRETT_DEFINITIONS})
+  target_link_libraries(${t} ${P}/lib/libbarrett.so ${BARRETT_LIBRARIES} ${CURSES_LIBRARIES})
+  set_target_properties(${t} PROPERTIES BUILD_WITH_INSTALL_RPATH TRUE INSTALL_RPATH "${P}/lib;/usr/local/lib")
+endforeach()

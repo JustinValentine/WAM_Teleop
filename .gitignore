@@ -1,1 +1,8 @@
 data/
+# the C++ tests' vectors (python -m cable_ident testvectors)
+!test/data/
+
+# ident/: build products and caches of the identification tool
+ident/cable_ident/_regressor.so
+ident/cable_ident/_regressor.cpp
+ident/**/__pycache__/

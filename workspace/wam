@@ -1,0 +1,609 @@
+#!/usr/bin/env bash
+# wam: start, swap and stop thor's two WAM demos, the leader/follower teleop
+# and the haptic saber, in one tmux session ("wam") that works on thor's
+# screen or over SSH. Settings: wam_settings.sh, next to this script.
+#
+#   wam teleop   wam8g leader + P2 follower (+ hand controller, + a recording)
+#   wam saber    the haptic saber on the wam8g
+#   wam stop     ends whichever runs; Shift-Idle the arms when it asks
+#                (Ctrl-C while it waits, or wam stop --force: kill what is left)
+#   wam status   what is running
+#   wam attach   back into the session (Ctrl-b d leaves it running)
+#   wam joytest  shows the navigation controller's buttons as you press them
+#   wam 4c on|off  4C on both arms mid-teleop ('c' in either arm's pane too)
+#   wam pp on|off  plain P-P on both arms mid-teleop ('p' in either pane too)
+#   wam log [file ...]  timing and link summary of the latest (or the given)
+#                recordings the arm programs wrote themselves (RECORD=native)
+#   wam ft-cal [file]  fit the gripper beyond the follower's force/torque
+#                sensor from the latest (or the given) follower recording made
+#                with --ft log (wam_settings.sh, "Force/torque sensor")
+#
+# Each pane's output is saved in pane_logs/<start time>_<pane>.log.
+# Starting one demo while the other runs offers to stop it first. The arms
+# are never activated or linked by this script: their programs still ask for
+# Shift-Activate, 'l' and Enter as before.
+
+set -uo pipefail
+
+REPO=$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")" && pwd)
+CONTAINER=wam_ros
+IN=/home/user/wam_ros            # the repository inside the container
+SESSION=wam
+LEADER_CONF=$IN/config/wam8g/default.conf
+FOLLOWER_CONF=$IN/wam_ws/src/wam_teleop/config/follower-zeus-hand/follower.conf
+BIN=$IN/wam_ws/devel/lib/wam_teleop
+TOPICS="/leader/joint_states /follower/joint_states /leader/gravity /follower/gravity /follower/hand/velocity_setpoint
+	/nav_controller_teleop/joy /follower/hand/next_pose"
+PANE_LOGS=$REPO/pane_logs        # each pane's output (on thor, not in the container)
+LOG_STAMP=$(date +%Y%m%d_%H%M%S)
+# shellcheck source=wam_settings.sh
+source "$REPO/wam_settings.sh"
+# Settings added 2026-11-09, with their defaults for an older wam_settings.sh.
+RECORD=${RECORD:-$([ "${RECORD_BAG:-yes}" = yes ] && echo bag || echo no)}   # native | bag | both | no
+LEADER_CAN=${LEADER_CAN:-can1}
+FOLLOWER_CAN=${FOLLOWER_CAN:-can0}
+LEADER_CPU=${LEADER_CPU:-}
+FOLLOWER_CPU=${FOLLOWER_CPU:-}
+LEADER_EXTRA=${LEADER_EXTRA:-}
+FOLLOWER_EXTRA=${FOLLOWER_EXTRA:-}
+FT_TOOL=${FT_TOOL:-wam_ws/src/wam_teleop/config/follower-zeus-hand/ft_tool.conf}   # in the repository
+FT_ORIGIN_Z=${FT_ORIGIN_Z:-}
+CAN_TXQUEUELEN=${CAN_TXQUEUELEN:-100}   # frames; see check_can (2026-11-10)
+
+# Programs, as `pgrep -f` patterns inside the container.
+P_LEADER="^$BIN/leader_wam8g"
+P_FOLLOWER="^$BIN/follower( |$)"
+P_SABER="^$IN/demos/haptic_saber/build-"
+P_ROSCORE="/rosmaster --core"
+P_HAND="roslaunch wam_teleop hand_nav_controller.launch"
+P_BAG="/rosbag/record|/rosbag record"
+P_OTHER_ARM="wam8g_j6_friction|dynamics_excitation|bt-wam-"   # anything else on the arms
+
+# ---- inside the container: one component per tmux pane ---------------------
+
+wait_master() {
+	for _ in $(seq 60); do
+		rostopic list >/dev/null 2>&1 && return 0
+		sleep 0.5
+	done
+	echo "roscore did not come up."
+	return 1
+}
+
+# The low-latency options of one arm program (lib/teleop_app.h): its own
+# recording, no ROS state publisher unless a bag wants it, its control
+# thread's CPU. $1: leader|follower, $2: the session's time stamp.
+arm_options() {
+	local arm=$1 stamp=${2:-$(date +%Y%m%d_%H%M%S)} cpu out=""
+	case "$RECORD" in
+	native|both) out+=" --record $IN/teleop_logs/teleop_${stamp}_${arm}.tlog" ;;
+	esac
+	case "$RECORD" in
+	native|no) out+=" --no-ros-state" ;;
+	esac
+	[ "$arm" = leader ] && cpu=$LEADER_CPU || cpu=$FOLLOWER_CPU
+	if [ -n "$cpu" ]; then
+		if [ -d "/sys/devices/system/cpu/cpu$cpu" ]; then
+			out+=" --rt-cpu $cpu"
+		else
+			echo "Note: this computer has no CPU $cpu (wam_settings.sh); the $arm's control thread is not pinned." >&2
+		fi
+	fi
+	echo "$out"
+}
+
+container_run() {
+	set +u   # ROS's setup scripts read unset variables
+	# shellcheck disable=SC1091
+	source /opt/ros/noetic/setup.bash
+	# shellcheck disable=SC1091
+	source "$IN/wam_ws/devel/setup.bash"
+	case "$1" in
+	roscore) exec roscore ;;
+	hand) wait_master && exec roslaunch wam_teleop hand_nav_controller.launch ;;
+	leader)
+		wait_master || exit 1
+		export BARRETT_CONFIG_FILE=$LEADER_CONF
+		# shellcheck disable=SC2086
+		exec rosrun wam_teleop leader_wam8g $LEADER_ARGS $LEADER_EXTRA $(arm_options leader "$2") 127.0.0.1 5555 5554 ;;
+	follower)
+		wait_master || exit 1
+		export BARRETT_CONFIG_FILE=$FOLLOWER_CONF
+		[ "${SPREAD_POSES:-yes}" = yes ] || FOLLOWER_ARGS="$FOLLOWER_ARGS --no-spread-poses"
+		# shellcheck disable=SC2086
+		exec rosrun wam_teleop follower $FOLLOWER_ARGS $FOLLOWER_EXTRA $(arm_options follower "$2") 127.0.0.1 5554 5555 ;;
+	bag)
+		wait_master || exit 1
+		# shellcheck disable=SC2086
+		exec rosbag record -O "$IN/teleop_logs/teleop_$(date +%Y%m%d_%H%M%S).bag" $TOPICS ;;
+	*) echo "wam _run: unknown component $1"; exit 2 ;;
+	esac
+}
+
+if [ "${1:-}" = _run ]; then
+	container_run "${2:-}" "${3:-}"
+fi
+
+# ---- on thor ---------------------------------------------------------------
+
+container_up() { [ "$(docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null)" = true ]; }
+running() { container_up && docker exec "$CONTAINER" pgrep -f "$1" >/dev/null 2>&1; }
+saber_launcher() { pgrep -f "run_demo.py saber" >/dev/null 2>&1; }
+session() { tmux has-session -t "$SESSION" 2>/dev/null; }
+pane_named() { tmux list-panes -s -t "$SESSION" -F '#{pane_id} #{@name}' 2>/dev/null | awk -v n="$1" '$2 == n { print $1 }'; }
+last_line() { tmux capture-pane -p -t "$1" | sed '/^[[:space:]]*$/d' | tail -n 1; }
+
+# Types key + Enter into a pane whose program waits at prompt. 0: the program
+# has it (the terminal echoed "prompt key"); 1: it did not arrive; 2: the pane
+# is not at that prompt, so nothing was typed. A pane scrolled with the mouse
+# is in tmux's copy mode, which takes keys itself and still shows the prompt
+# to capture-pane, so copy mode is left first.
+send_at_prompt() {
+	local pane=$1 prompt=$2 key=$3
+	if [ "$(tmux display -p -t "$pane" '#{pane_in_mode}')" = 1 ]; then
+		tmux send-keys -t "$pane" -X cancel
+		sleep 0.3
+	fi
+	[ "$(tmux display -p -t "$pane" '#{pane_in_mode}')" = 0 ] || return 1
+	[ "$(last_line "$pane")" = "$prompt" ] || return 2
+	tmux send-keys -t "$pane" "$key" Enter
+	for _ in $(seq 10); do
+		sleep 0.3
+		tmux capture-pane -p -t "$pane" | grep -qxF "$prompt $key" && return 0
+	done
+	return 1
+}
+ask() {  # ask "question" -> 0 for yes (the default)
+	local reply
+	read -r -p "$1 [Y/n] " reply
+	[[ -z "$reply" || "$reply" =~ ^[Yy] ]]
+}
+
+inside_session() {
+	[ -n "${TMUX:-}" ] && [ "$(tmux display-message -p '#S' 2>/dev/null)" = "$SESSION" ]
+}
+
+teleop_running() { running "$P_LEADER" || running "$P_FOLLOWER"; }
+
+# The ROS side (bag, hand controller, roscore): Ctrl-C in each pane, as by
+# hand, which closes the bag properly; then, for anything left (closing a pane
+# does not stop a program started with docker exec), SIGINT and SIGTERM in the
+# container.
+stop_ros() {
+	container_up || return 0
+	local name p pane
+	for name in bag hand roscore; do
+		case $name in
+		bag) p=$P_BAG ;;
+		hand) p=$P_HAND ;;
+		roscore) p=$P_ROSCORE ;;
+		esac
+		running "$p" || continue
+		pane=$(pane_named "$name")
+		if [ -n "$pane" ]; then
+			tmux send-keys -t "$pane" C-c
+			for _ in $(seq 20); do
+				running "$p" || break
+				sleep 0.5
+			done
+		fi
+		running "$p" && docker exec "$CONTAINER" pkill -INT -f "$p" 2>/dev/null && sleep 3
+		running "$p" && docker exec "$CONTAINER" pkill -TERM -f "$p" 2>/dev/null
+	done
+	return 0
+}
+saber_running() { saber_launcher || running "$P_SABER"; }
+
+ensure_container() {
+	container_up && return 0
+	echo "Starting the $CONTAINER container..."
+	docker start "$CONTAINER" >/dev/null || { echo "Cannot start $CONTAINER (docker ps -a)."; exit 1; }
+}
+
+# A CAN interface up at 1 Mbit/s; brings it up with sudo if it is down.
+check_can() {
+	local i=$1 arm=$2 info
+	if ! info=$(ip -details link show "$i" 2>/dev/null); then
+		echo "$i ($arm) is missing: check its CAN adapter (a PCAN-USB: plugged in and powered; a PCI/PCIe card:"
+		echo "its driver, lsmod | grep peak) and the interface names in wam_settings.sh."
+		return 1
+	fi
+	if ! grep -q "[<,]UP[,>]" <<<"$info" || ! grep -q "bitrate 1000000 " <<<"$info"; then
+		# The installed script (README; on odin a link into another checkout), or this repository's.
+		local init=/usr/local/bin/init_can.sh
+		[ -x "$init" ] || init=$REPO/init_can.sh
+		echo "$i ($arm) is not up at 1 Mbit/s; bringing it up (sudo $init):"
+		sudo "$init" "$i" || return 1
+		info=$(ip -details link show "$i")
+	fi
+	# The transmit queue. Linux's default is 10 frames, and a PCI/PCIe card (an
+	# SJA1000: one frame in the controller at a time) holds nothing more, so the
+	# 12th frame of a burst is dropped: send() fails with ENOBUFS in the arm
+	# program's control loop, which logs it and carries on without that frame.
+	# A PCAN-USB takes ten more into its USB requests, which is why the default
+	# was enough on thor. A cycle sends up to about ten (torques, position and
+	# sensor requests, the hand).
+	local qlen
+	qlen=$(cat "/sys/class/net/$i/tx_queue_len" 2>/dev/null || echo 0)
+	if [ "$qlen" -lt "$CAN_TXQUEUELEN" ]; then
+		echo "$i ($arm): its transmit queue holds $qlen frames; raising it to $CAN_TXQUEUELEN (sudo):"
+		sudo ip link set "$i" txqueuelen "$CAN_TXQUEUELEN" || return 1
+	fi
+	local state
+	state=$(grep -o "can state [A-Z-]*" <<<"$info" | awk '{print $3}')
+	[ "$state" = ERROR-ACTIVE ] || echo "Note: $i reports CAN state $state."
+	return 0
+}
+
+# Nothing else may use the arms; the other demo may be stopped first.
+preflight() {
+	local want=$1
+	if inside_session; then
+		echo "You are inside the wam session: detach first (Ctrl-b d), then run wam $want."
+		exit 1
+	fi
+	if [ "$want" = saber ] && teleop_running; then
+		ask "The teleop is running. Stop it first?" || exit 1
+		stop_all || exit 1
+	elif [ "$want" = teleop ] && saber_running; then
+		ask "The saber is running. Stop it first?" || exit 1
+		stop_all || exit 1
+	fi
+	if session; then
+		if teleop_running || saber_running; then
+			echo "The wam session is still running: wam attach, or wam stop."
+			exit 1
+		fi
+		stop_ros   # leftovers only
+		tmux kill-session -t "$SESSION"
+	elif [ -n "$(arm_programs_left)" ]; then
+		echo "Arm programs run in the container without a wam session (closing a pane does not"
+		echo "end them):$(arm_programs_left). Run wam stop first."
+		exit 1
+	fi
+	ensure_container
+	if running "$P_OTHER_ARM"; then
+		echo "Another arm program is running in the container:"
+		docker exec "$CONTAINER" pgrep -af "$P_OTHER_ARM"
+		exit 1
+	fi
+	local ok=0
+	if [ "$want" = teleop ]; then
+		check_can "$FOLLOWER_CAN" "P2 follower" || ok=1
+	fi
+	check_can "$LEADER_CAN" "wam8g" || ok=1
+	[ $ok -eq 0 ] || exit 1
+}
+
+new_pane() {  # new_pane name command [split args...]: prints the pane id
+	local name=$1 cmd=$2 id
+	shift 2
+	if [ $# -eq 0 ]; then
+		id=$(tmux new-session -d -s "$SESSION" -x 200 -y 50 -P -F '#{pane_id}')
+	else
+		id=$(tmux split-window "$@" -P -F '#{pane_id}')
+	fi
+	tmux set -p -t "$id" @name "$name"
+	mkdir -p "$PANE_LOGS" && tmux pipe-pane -o -t "$id" "cat >> '$PANE_LOGS/${LOG_STAMP}_$name.log'"
+	[ -n "$cmd" ] && tmux send-keys -t "$id" "$cmd" Enter
+	echo "$id"
+}
+
+style_session() {
+	tmux set -t "$SESSION" mouse on
+	tmux set -t "$SESSION" pane-border-status top
+	tmux set -t "$SESSION" pane-border-format ' #{@name} '
+	tmux set -t "$SESSION" status-right ' click a pane to type | scrolled? q ends it | Ctrl-b d, then wam stop '
+	tmux set -t "$SESSION" status-right-length 90
+}
+
+attach() {
+	if [ -n "${TMUX:-}" ]; then
+		tmux switch-client -t "$SESSION"
+	else
+		tmux attach -t "$SESSION"
+	fi
+}
+
+start_teleop() {
+	preflight teleop
+	[ -e /dev/nav_controller ] || [ "$HAND_CONTROLLER" != yes ] ||
+		echo "Note: the navigation controller is off or unplugged (the hand waits for it)."
+	local run="docker exec -it $CONTAINER $IN/wam _run"
+	local leader follower ros hand bag
+	leader=$(new_pane leader "")
+	follower=$(new_pane follower "" -h -t "$leader")
+	ros=$(new_pane roscore "$run roscore" -v -l 25% -t "$leader")
+	if [ "$HAND_CONTROLLER" = yes ]; then
+		hand=$(new_pane hand "$run hand" -h -t "$ros")
+	fi
+	if [ "$RECORD" = bag ] || [ "$RECORD" = both ]; then
+		bag=$(new_pane bag "$run bag" -v -l 25% -t "$follower")
+	fi
+	# Both arm programs name their own recordings after this start time.
+	tmux send-keys -t "$leader" "$run leader $LOG_STAMP" Enter
+	tmux send-keys -t "$follower" "$run follower $LOG_STAMP" Enter
+	tmux rename-window -t "$SESSION" teleop
+	style_session
+	tmux select-pane -t "$leader"
+	echo "Starting the teleop. In each arm's pane: Shift-Activate when asked, then l and Enter."
+	attach
+}
+
+start_saber() {
+	preflight saber
+	local saber
+	saber=$(new_pane saber "$REPO/demos/saber.sh --robot canopen-wam8 --config $REPO/config/wam8g/default.conf $SABER_ARGS")
+	tmux rename-window -t "$SESSION" saber
+	style_session
+	echo "Starting the saber: follow the home-position and Shift-Activate prompts."
+	attach
+}
+
+# Stops what is left of the arm programs in the container, as gently as it
+# can (lib/clean_exit.h): SIGINT ends a teleop program's teleop as 'x' does
+# (the arm holds, the hand closes to a fist) and it exits once its WAM is not
+# active; a second SIGINT makes it exit without waiting; SIGKILL only if it
+# still runs after that. 0 when none is left.
+kill_arm_programs() {
+	local p round
+	for round in first second; do
+		for p in "$P_LEADER" "$P_FOLLOWER" "$P_SABER"; do
+			running "$p" && docker exec "$CONTAINER" pkill -INT -f "$p"
+		done
+		for _ in $(seq $([ $round = first ] && echo 30 || echo 10)); do
+			teleop_running || running "$P_SABER" || return 0
+			sleep 0.5
+		done
+		[ $round = first ] && echo "Still running:$(arm_programs_left) (its WAM still active?); telling it to exit now."
+	done
+	echo "Killing:$(arm_programs_left)."
+	for p in "$P_LEADER" "$P_FOLLOWER" "$P_SABER"; do
+		running "$p" && docker exec "$CONTAINER" pkill -KILL -f "$p"
+	done
+	sleep 1
+	! teleop_running && ! running "$P_SABER"
+}
+
+# The arm programs still running, as " leader follower saber".
+arm_programs_left() {
+	local left=""
+	running "$P_LEADER" && left+=" leader"
+	running "$P_FOLLOWER" && left+=" follower"
+	running "$P_SABER" && left+=" saber"
+	echo "$left"
+}
+
+# Confirms a force-stop of $1 (default no).
+force_ok() {
+	local reply
+	echo "Force-stop kills$1. A killed program stops controlling its arm: Shift-Idle or"
+	echo "E-Stop an arm that is still active first."
+	read -r -p "Force-stop now? [y/N] " reply
+	[[ "$reply" =~ ^[Yy] ]]
+}
+
+# Ends whichever demo runs. The arm programs end themselves: x (teleop) or q
+# (saber) at their prompt, which this sends only when a pane shows exactly
+# that prompt, then Shift-Idle on the pendant. Ctrl-C while it waits, or
+# --force, kills what is left: a program stuck waiting for its arm, or one
+# left running in the container without a pane (closing a pane that runs
+# docker exec does not end the program in the container).
+stop_all() {
+	local force=${1:-}
+	if inside_session; then
+		echo "You are inside the wam session: detach first (Ctrl-b d), then run wam stop."
+		return 1
+	fi
+	local left
+	if ! session; then
+		left=$(arm_programs_left)
+		if [ -n "$left" ] || running "$P_ROSCORE" || running "$P_HAND" || running "$P_BAG" || saber_launcher; then
+			echo "No wam session, but these still run in the container (closing a pane does not end them):"
+			container_up && docker exec "$CONTAINER" pgrep -af "$P_LEADER|$P_FOLLOWER|$P_SABER|$P_ROSCORE|$P_HAND|$P_BAG"
+			saber_launcher && pgrep -af "run_demo.py saber"
+			if [ -n "$left" ]; then
+				[ "$force" = --force ] || force_ok "$left" || return 1
+				kill_arm_programs || { echo "Could not stop:$(arm_programs_left)."; return 1; }
+			fi
+			stop_ros
+			saber_launcher && pkill -f "run_demo.py saber"
+			echo "Stopped."
+		else
+			echo "Nothing is running."
+		fi
+		return 0
+	fi
+	local name pane key prompt pattern last
+	for name in leader follower saber; do
+		pane=$(pane_named "$name")
+		[ -n "$pane" ] || continue
+		case $name in
+		leader) pattern=$P_LEADER key=x prompt='>>>' ;;
+		follower) pattern=$P_FOLLOWER key=x prompt='>>>' ;;
+		saber) pattern=$P_SABER key=q prompt='>>' ;;
+		esac
+		running "$pattern" || continue
+		send_at_prompt "$pane" "$prompt" "$key"
+		case $? in
+		0) echo "$name: typed $key." ;;
+		2)
+			last=$(last_line "$pane")
+			if grep -qi 'shift-idle' <<<"$last"; then
+				echo "$name is finishing: Shift-Idle its arm on the pendant."
+			else
+				echo "$name is not at its $prompt prompt; its pane ends with:"
+				echo "    $last"
+				echo "  Answer it in its pane (wam attach), then type $key there; or Ctrl-C here to force-stop."
+			fi ;;
+		*) echo "$name: $key did not arrive; type it in its pane (wam attach), or Ctrl-C here to force-stop." ;;
+		esac
+	done
+	local waited=0 interrupted=0
+	trap 'interrupted=1' INT
+	while [ $interrupted -eq 0 ] && [ -n "$(arm_programs_left)" ]; do
+		if [ "$force" = --force ] && [ $waited -ge 10 ]; then
+			break
+		fi
+		if [ $((waited % 15)) -eq 0 ]; then
+			echo "Waiting for:$(arm_programs_left). Shift-Idle each arm when its program asks (Ctrl-C: force-stop)."
+		fi
+		sleep 1
+		waited=$((waited + 1))
+	done
+	trap - INT
+	left=$(arm_programs_left)
+	if [ -n "$left" ]; then
+		echo
+		if [ "$force" = --force ] || force_ok "$left"; then
+			kill_arm_programs || { echo "Could not stop:$(arm_programs_left)."; return 1; }
+		else
+			echo "Left running:$left. wam attach to finish it there, or wam stop --force."
+			return 1
+		fi
+	fi
+	stop_ros
+	tmux kill-session -t "$SESSION" 2>/dev/null
+	saber_launcher && pkill -f "run_demo.py saber"
+	local bag logs tlog
+	bag=$(ls -t "$REPO"/teleop_logs/teleop_*.bag 2>/dev/null | head -n 1)
+	tlog=$(ls -t "$REPO"/teleop_logs/teleop_*.tlog 2>/dev/null | head -n 1)
+	logs=$(ls -t "$PANE_LOGS"/*.log 2>/dev/null | head -n 1)
+	echo "Stopped.${bag:+ Latest bag: $bag}"
+	[ -n "$tlog" ] && echo "Latest recording: ${tlog%_*}_{leader,follower}.tlog  (wam log shows its timing)"
+	[ -n "$logs" ] && echo "Pane output: ${logs%_*}_*.log"
+	return 0
+}
+
+# The teleop's mode on both arms of a running teleop (lib/teleop_mode.h):
+# full (the launched law, u4), no4c (u2) or pp (u1). The terms fade over 1 s;
+# the arms' panes confirm.
+set_mode() {
+	if ! running "$P_LEADER" && ! running "$P_FOLLOWER"; then
+		echo "The teleop is not running."
+		return 1
+	fi
+	docker exec "$CONTAINER" bash -c "source /opt/ros/noetic/setup.bash && rostopic pub -1 /teleop/mode std_msgs/String 'data: $1'" >/dev/null &&
+		echo "$2 (both arms fade over 1 s; their panes say so)."
+}
+four_channel() {
+	case "${1:-}" in
+	on) set_mode full "4C on: our system" ;;
+	off) set_mode no4c "4C off: u2, position-position + dynamics compensation" ;;
+	*) echo "wam 4c on|off"; return 1 ;;
+	esac
+}
+position_position() {
+	case "${1:-}" in
+	on) set_mode pp "P-P on: u1, plain position-position" ;;
+	off) set_mode full "P-P off: our system" ;;
+	*) echo "wam pp on|off"; return 1 ;;
+	esac
+}
+
+# The navigation controller's buttons as they are pressed (the numbers are
+# joy_node's, as in config/hand_nav_controller.yaml).
+joytest() {
+	local dev=/dev/nav_controller
+	if [ ! -e "$dev" ]; then
+		echo "No navigation controller ($dev): turn it on (PS) or plug it in."
+		return 1
+	fi
+	echo "Press the navigation controller's buttons (Ctrl-C ends)."
+	echo "L2 + stick: the grasp. L2 + X: the hand's next spread pose."
+	python3 - "$dev" <<'PY'
+import struct, sys
+NAMES = ["X", "Circle", "Triangle", "Square", "L1", "L2", "PS", "L3", "Up", "Down", "Left", "Right"]
+def name(b):
+    return "%s (%d)" % (NAMES[b] if b < len(NAMES) else "button", b)
+down = set()
+try:
+    with open(sys.argv[1], "rb") as js:
+        while True:
+            _, value, kind, number = struct.unpack("IhBB", js.read(8))
+            if not kind & 0x01:  # axes
+                continue
+            if value:
+                down.add(number)
+            else:
+                down.discard(number)
+            if kind & 0x80:  # the state at open
+                continue
+            held = " + ".join(name(b) for b in sorted(down, key=lambda b: (b != 5, b))) or "-"
+            note = ""
+            if value and down == {0, 5}:
+                note = "   <- the hand's next spread pose"
+            elif value and number == 0 and 5 not in down:
+                note = "   (hold L2 too for the next spread pose)"
+            print("%-8s %-11s held: %s%s" % ("pressed" if value else "released", name(number), held, note), flush=True)
+except KeyboardInterrupt:
+    pass
+PY
+}
+
+status() {
+	echo "Boot: $(uname -r)"
+	if container_up; then echo "Container $CONTAINER: running"; else echo "Container $CONTAINER: stopped (wam teleop/saber starts it)"; fi
+	local i info
+	for i in "$FOLLOWER_CAN" "$LEADER_CAN"; do
+		if info=$(ip -details link show "$i" 2>/dev/null); then
+			printf '%s: %s, %s, %s, transmit queue %s\n' "$i" \
+				"$(grep -q '[<,]UP[,>]' <<<"$info" && echo up || echo DOWN)" \
+				"$(grep -o 'bitrate [0-9]*' <<<"$info" || echo 'no bitrate')" \
+				"$(grep -o 'can state [A-Z-]*' <<<"$info" || echo '?')" \
+				"$(cat "/sys/class/net/$i/tx_queue_len" 2>/dev/null || echo '?')"
+		else
+			echo "$i: missing"
+		fi
+	done
+	[ -e /dev/nav_controller ] && echo "Navigation controller: connected" || echo "Navigation controller: not connected"
+	session && echo "Session: wam ($(tmux list-windows -t "$SESSION" -F '#W' | tr '\n' ' '))" || echo "Session: none"
+	local p
+	for p in "leader:$P_LEADER" "follower:$P_FOLLOWER" "saber:$P_SABER" "roscore:$P_ROSCORE" \
+			"hand controller:$P_HAND" "bag:$P_BAG" "other arm program:$P_OTHER_ARM"; do
+		running "${p#*:}" && echo "Running: ${p%%:*}"
+	done
+	saber_launcher && echo "Running: saber viewer"
+	return 0
+}
+
+# The timing and link summary of the arm programs' own recordings: the given
+# files, or the latest session's two.
+show_log() {
+	local files=("$@") latest
+	if [ ${#files[@]} -eq 0 ]; then
+		latest=$(ls -t "$REPO"/teleop_logs/teleop_*.tlog 2>/dev/null | head -n 1)
+		[ -n "$latest" ] || { echo "No recordings in $REPO/teleop_logs (RECORD=native in wam_settings.sh)."; return 1; }
+		files=("${latest%_*}"_*.tlog)
+	fi
+	python3 "$REPO/wam_ws/src/wam_teleop/scripts/teleop_log.py" "${files[@]}"
+}
+
+# The gripper beyond the follower's force/torque sensor, fitted from a
+# recording made with `follower --ft log` (the given file, or the latest
+# follower recording) and written where FT_TOOL in wam_settings.sh points.
+ft_cal() {
+	local file=${1:-}
+	if [ -z "$file" ]; then
+		file=$(ls -t "$REPO"/teleop_logs/teleop_*_follower.tlog 2>/dev/null | head -n 1)
+		[ -n "$file" ] || { echo "No follower recordings in $REPO/teleop_logs."; return 1; }
+	fi
+	python3 "$REPO/wam_ws/src/wam_teleop/scripts/ft_tool_cal.py" "$file" -o "$REPO/$FT_TOOL" ${FT_ORIGIN_Z:+--origin-z "$FT_ORIGIN_Z"} &&
+		echo "Use it with FOLLOWER_EXTRA=\"--ft wrist --ft-tool $IN/$FT_TOOL\" in wam_settings.sh."
+}
+
+case "${1:-}" in
+teleop) start_teleop ;;
+log) shift; show_log "$@" ;;
+ft-cal) shift; ft_cal "$@" ;;
+saber) start_saber ;;
+stop) stop_all "${2:-}" ;;
+status) status ;;
+attach) session && attach || echo "No wam session." ;;
+joytest) joytest ;;
+4c) four_channel "${2:-}" ;;
+pp) position_position "${2:-}" ;;
+*)
+	sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'
+	exit 1 ;;
+esac

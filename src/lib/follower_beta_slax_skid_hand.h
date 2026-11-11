@@ -1,0 +1,46 @@
+// Estimated Pvector, gravity included (30, for regressor_W.h).
+// The slax follower with the skid gripper and the Barrett F/T sensor: Serg's fit of
+// 2026-11-09 (feasible-dynamics-estimation Feas-Ident-WAM4, beta_star_correct), copied
+// value for value from his wam_teleop, src/lib/dynamics/follower_beta/slax_skid_hand_4dof.h
+// (commit 83d338c). The Coulomb friction of J1-J4 is zero there, as in our other fits.
+#ifndef FOLLOWER_BETA_VECTOR_H_
+#define FOLLOWER_BETA_VECTOR_H_
+
+#include <eigen3/Eigen/Dense>
+Eigen::Matrix<double, 30, 1> initialize_follower_beta() {
+    Eigen::Matrix<double, 30, 1> follower_beta;
+    follower_beta << 1.016324406423079890e-01,
+    7.454400326000000243e-01,
+    0.0,
+    9.984186456000621046e-01,
+    -1.081846246999999903e-03,
+    -9.874437837999999745e-02,
+    1.062765997988784461e+00,
+    -4.173548761999999746e-02,
+    -3.215657051000000294e-02,
+    2.363397204948889829e+00,
+    1.687321583999999985e+00,
+    0.0,
+    1.073695948191815824e-01,
+    1.451844999996865226e-02,
+    2.485797265000000075e-02,
+    7.479399442405475218e-02,
+    4.282880733000000301e-02,
+    1.264225599548925716e-01,
+    -4.559195218999999993e-02,
+    9.725746244999999846e-01,
+    0.0,
+    1.646958215779750212e-01,
+    4.918527519600000147e-02,
+    5.723510408999999896e-03,
+    1.979822300020250281e-01,
+    1.087528584000000027e-02,
+    -1.192452011549999802e-01,
+    7.386546158000000251e-01,
+    2.028109143000000059e-01,
+    0.0;
+
+    return follower_beta;
+}
+
+#endif

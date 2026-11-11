@@ -1,0 +1,28 @@
+# Sony navigation controller -> BarrettHand (joy_teleop), after
+# gripper_ros/config/nav_controller.yaml (github dmiller12/libgripper), with
+# L2 as the deadman: on thor (kernel 6.8, hid-sony, USB and Bluetooth alike) it has
+# buttons 0 cross, 1 circle, 2-3, 4 L1, 5 L2, 6 PS, 7 L3, 8-11 d-pad, and axes
+# 0 stick x, 1 stick y, 2 L2 trigger; button 6 there is PS, which turns the
+# controller off when held about 10 s. joy_node reports stick up as +1.
+#   L2 + stick up/down: close/open the fingers the pose uses (grasp, rad/s).
+#   L2 + cross: the spread one pose on, 0% -> 50% (pinch) -> 100% -> 0%
+#     (lib/hand_teleop.h). The fingers open fully first, so the hand lets go.
+#     joy_teleop repeats it with every joystick message while held; the
+#     follower takes one step per press.
+teleop:
+  bhand:
+    type: topic
+    message_type: gripper_ros_common/VelocitySetpoint
+    topic_name: bhand_vel
+    deadman_buttons: [5]
+    axis_mappings:
+      -
+        axis: 1
+        target: grasp
+        scale: 2.0
+  hand_pose:
+    type: topic
+    message_type: std_msgs/Empty
+    topic_name: /follower/hand/next_pose
+    deadman_buttons: [5, 0]
+    message_value: []

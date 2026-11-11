@@ -8,7 +8,11 @@
 #include <barrett/units.h>
 #include <barrett/systems.h>
 #include <barrett/math/kinematics.h> 
+#ifdef LEADER_WAM8G
+#include "leader_beta_wam8g.h"
+#else
 #include "leader_beta_ares_link.h"
+#endif
 #include "regressor_W.h"
 
 using namespace barrett;

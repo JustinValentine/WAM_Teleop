@@ -46,7 +46,7 @@ template <size_t WAM_DOF> class BackgroundStatePublisher {
 
   public:
     BackgroundStatePublisher(barrett::systems::ExecutionManager* em, barrett::systems::Wam<WAM_DOF> &wam, haptic_wrist::HapticWrist *hw = nullptr)
-        : wam(wam), hw(hw), stop_thread(false), nh((WAM_DOF == 4) ? "leader" : "follower"), exposedGravity(em) {
+        : wam(wam), hw(hw), stop_thread(false), nh((WAM_DOF == 7) ? "follower" : "leader"), exposedGravity(em) {
 
         barrett::systems::connect(wam.gravity.output, exposedGravity.input);
 
@@ -62,17 +62,25 @@ template <size_t WAM_DOF> class BackgroundStatePublisher {
             joint_names.push_back("wam_j5");
             joint_names.push_back("wam_j6");
             joint_names.push_back("wam_j7");
+        } else if (WAM_DOF == 8) {
+            // wam8g: passive J5, then the Alberta wrist
+            joint_names.push_back("wam_j5_passive");
+            joint_names.push_back("wrist_j6");
+            joint_names.push_back("wrist_j7");
+            joint_names.push_back("wrist_j8");
         } else {
             joint_names.push_back("hapticwrist_j1");
             joint_names.push_back("hapticwrist_j2");
             joint_names.push_back("hapticwrist_j3");
         }
         joint_state.name = joint_names;
-        joint_state.position.resize(7);
-        joint_state.velocity.resize(7);
-        joint_state.effort.resize(7);
+        // 4-DOF: the arm plus the haptic wrist's three joints
+        const size_t joints = (WAM_DOF > 7) ? WAM_DOF : 7;
+        joint_state.position.resize(joints);
+        joint_state.velocity.resize(joints);
+        joint_state.effort.resize(joints);
 
-        gravTorque.torque.resize(7);
+        gravTorque.torque.resize(joints);
 
         pub_thread = std::thread(&BackgroundStatePublisher::run, this);
     }

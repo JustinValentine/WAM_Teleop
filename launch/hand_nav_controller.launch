@@ -1,0 +1,32 @@
+<launch>
+	<!-- Sony navigation controller -> BarrettHand on the P2 follower.
+	     The follower owns the hand (its hand option); this starts only the
+	     joystick side: joy -> joy_teleop -> bhand_mux ->
+	     /follower/hand/velocity_setpoint (the grasp), and joy -> joy_teleop ->
+	     /follower/hand/next_pose (the spread). Hold L2 (the deadman, button 5
+	     in config/hand_nav_controller.yaml) and move the stick up/down to
+	     close/open; letting go stops the hand within the follower's command
+	     timeout (0.1 s). L2 + cross steps the spread 0% -> 50% (pinch) ->
+	     100% -> 0%.
+	     /dev/nav_controller is the udev link of 99-nav_controller.rules.
+	     Do not run gripper_ros's bhand_node on the follower's bus: libbarrett
+	     aborts the follower when another program polls the hand. -->
+	<arg name="joy_dev" default="/dev/nav_controller"/>
+
+	<group ns="nav_controller_teleop">
+		<!-- respawn: a crashed controller node comes back by itself (a demo) -->
+		<node pkg="joy" type="joy_node" name="joy_node" respawn="true" respawn_delay="1">
+			<param name="dev" value="$(arg joy_dev)"/>
+			<param name="deadzone" value="0.05"/>
+			<!-- republish while the stick is held still; without it the
+			     follower's command timeout stops the hand -->
+			<param name="autorepeat_rate" value="50"/>
+		</node>
+		<rosparam file="$(find wam_teleop)/config/hand_nav_controller.yaml" command="load"/>
+		<node pkg="joy_teleop" type="joy_teleop.py" name="bhand_teleop" respawn="true" respawn_delay="1"/>
+	</group>
+
+	<include file="$(find bhand_mux)/launch/bhand_mux.launch">
+		<arg name="cmd_vel_out" value="/follower/hand/velocity_setpoint"/>
+	</include>
+</launch>

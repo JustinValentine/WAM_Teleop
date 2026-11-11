@@ -1,0 +1,86 @@
+# Combined WAM + Alberta wrist: one eight-joint WAM (systems::Wam<8>, also
+# reachable as systems::Wam8g for the seven-active-joint view).  All arrays
+# use J1,J2,J3,J4,J5,J6,J7,J8 order; J5 is the passive encoder joint (no
+# motor, zero gains, never sent torque).  See doc/wam8g.md before
+# commissioning.  Recommended in the host's default.conf so a missing puck
+# cannot demote this robot to a 7-DOF WAM:  bus.expected_puck_mask = 0x01FE;
+wam8g:
+{
+	kinematics_calibrated = true; # DH parameters confirmed by operator.
+	gravity_calibrated = false;
+	low_level:
+	{
+		@include "calibration_data/wam8g/zerocal.conf"
+		# Row = motor (puck node), column = joint.  Puck 5 = passive J5 (1:1),
+		# puck 6 = J6 roll (N2 = 8.7456), pucks 7 and 8 = the J7/J8
+		# differential (N1 = 7.5077).  IDLE hand-motion checks on opus,
+		# 2026-09-22, identified physical J7 as the difference and J8 as
+		# the sum. The earlier J7/J8 column assignment was reversed.
+		# J6 retains its measured reversed roll direction. Confirm the
+		# physical positive directions of J7/J8 after this identity fix.
+		#   m6 = -N2*q6,  m7 = N1*(q7 + q8),  m8 = N1*(-q7 + q8)
+		#   q6 = -m6/N2,  q7 = (m7-m8)/(2*N1),  q8 = (m7+m8)/(2*N1)
+		j2mp = ((-42.0, 0, 0, 0, 0, 0, 0, 0),
+		        (0, 28.25, -16.8155, 0, 0, 0, 0, 0),
+		        (0, -28.25, -16.8155, 0, 0, 0, 0, 0),
+		        (0, 0, 0, -18.0, 0, 0, 0, 0),
+		        (0, 0, 0, 0, 1.0, 0, 0, 0),
+		        (0, 0, 0, 0, 0, -8.7456, 0, 0),
+		        (0, 0, 0, 0, 0, 0, 7.5077,  7.5077),
+		        (0, 0, 0, 0, 0, 0, -7.5077, 7.5077));
+
+		# Per-MOTOR signs, node order 1-8. After electrical calibration on
+		# opus (2026-09-22), negative J1-J4 commands produced physically
+		# positive motion and negative encoder deltas. Reverse both paths
+		# to match the operator's physical joint directions while retaining
+		# negative feedback. Keep the measured wrist mapping above.
+		canopen_position_sign = (-1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0);
+		canopen_torque_sign   = (-1.0, -1.0, -1.0, -1.0, 1.0, 1.0, 1.0, 1.0);
+	};
+	@include "calibration_data/wam8g/gravitycal.conf"
+	kinematics:
+	{
+		world_to_base = (
+			(1,0,0,0), 
+			(0,1,0,0), 
+			(0,0,1,0), 
+			(0,0,0,1));
+
+		moving = (
+			{ alpha_pi = -0.5; a = 0; d = 0; }, # J1
+			{ alpha_pi =  0.5; a = 0; d = 0; }, # J2
+			{ alpha_pi = -0.5; a = 0.045; d = 0.55; }, # J3
+			{ alpha_pi =  0.0; a = 0.30; d = 0; theta_pi = -0.547; }, # J4
+
+			{ alpha_pi = 0.5; a = 0; d = 0; theta_pi = 0.547; }, # passive J5
+			{ alpha_pi = 0.5; a = 0; d = 0.155; theta_pi = 0.5; }, # J6
+			{ alpha_pi = 0.5; a = 0; d = 0; theta_pi = 0.5; }, # J7
+			{ alpha_pi = 0; a = 0; d = 0; }  # J8
+		);
+		toolplate = { alpha_pi = 0; theta_pi = 0; a = 0; d = 0.0; };
+	};
+	joint_velocity_filter: { type = "low_pass"; omega_p = (180,180,180,180,180,180,180,180); };
+	joint_position_control:
+	{
+		# Arm Kp reduced 30% for vibration tuning; Kd retained for damping.
+		# Wrist gains unchanged; wrist integral remains disabled.
+		# J5 gains must always remain zero, enforced by Wam8g.
+		# Stock gravitycal/zerocal disable these position-controller torque caps.
+		# These limits apply while the configured limit vector is in use.
+		kp = (630, 1750, 420, 210, 0, 20, 10, 10);
+		ki = (2.5, 5, 2.5, 0.5, 0, 0, 0, 0);
+		kd = (10, 20, 10, 2.5, 0, 0.1, 0.1, 0.1);
+		control_signal_limit = (25, 20, 15, 15, 0, 5, 5, 5);
+	};
+	joint_velocity_control = (
+		{ kp=(42,42,18,18,0,0,0,0); ki=(0,0,0,0,0,0,0,0); kd=(0,0,0,0,0,0,0,0);
+		  control_signal_limit=(25,20,15,15,0,0,0,0); },
+		{ type="low_pass"; omega_p=(180,180,56,56,56,56,56,56); }
+	);
+	tool_position_control:
+	{
+		kp=(2000,2000,2000); ki=(0,0,0); kd=(20,20,20);
+		control_signal_limit=(100,100,100);
+	};
+	tool_orientation_control: { kp=0; kd=0; }; # tune for the assembled wrist
+};

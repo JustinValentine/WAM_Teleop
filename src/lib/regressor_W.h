@@ -1,3 +1,4 @@
+#pragma once  // included by cable_drive_model.h and the dynamics headers
 //
 // Academic License - for use in teaching, academic research, and meeting
 // course requirements at degree granting institutions only.  Not for

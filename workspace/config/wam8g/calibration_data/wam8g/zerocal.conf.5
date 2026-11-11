@@ -1,0 +1,11 @@
+# wam8g repeatable home selected by the operator, 2026-09-22.
+# Order J1..J8, radians. This is the pose captured at 18:00:18 EDT,
+# after gravitycal stopped. Reference was the prior home at 18:05:56 EDT.
+# J1-J3 and J5-J8: inverse(j2mp) times the measured motor-count changes.
+# J4: the raw multi-turn count had an unexplained ~11-turn discrepancy.
+# Its absolute motor encoder changed +1045 counts (1063 to 2108), which
+# matches the operator's observation of about 5 degrees more elbow opening.
+# J4 = 3.13 - 1045 * 2*pi / (4096*18) = 3.040944 rad.
+# No zeroangle compensation: reproduce the selected new pose at startup.
+# Captures and backups: ~/lbc-updates/home-rebase-20260922-v1/ on opus.
+home = (0.011395, -1.990117, 0.003375, 3.040944, 0.009204, 0.000000, -1.628581, -0.025796);

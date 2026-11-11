@@ -16,4 +16,11 @@
 	<build_depend>message_generation</build_depend>
 
 	<exec_depend>message_runtime</exec_depend>
+
+	<!-- the follower's hand option and launch/hand_nav_controller.launch -->
+	<build_depend>gripper_ros_common</build_depend>
+	<exec_depend>gripper_ros_common</exec_depend>
+	<exec_depend>bhand_mux</exec_depend>
+	<exec_depend>joy</exec_depend>
+	<exec_depend>joy_teleop</exec_depend>
 </package>
