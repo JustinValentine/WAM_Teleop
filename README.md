@@ -341,7 +341,41 @@ the hand only through the same position error.
 
 With the Barrett force/torque sensor on the follower's tool plate, the contact
 is measured instead (`src/lib/ft_core.h` has the arithmetic and the reasons).
-None of this has run on the robots; everything is off unless asked for.
+Everything is off unless asked for. On the arms so far (odin, 2026-11-11, the
+slax follower with its skid gripper): reading the sensor in the loop (every
+cycle, at most 0.27 ms of loop time), `wam ft-zero`, the gripper's calibration
+(`wam ft-cal`, two runs) and a first teleop session with `--ft arm`. The
+wrist's force channel (`--ft wrist`, `leader_wam8g --wrist-force`), the
+tether and `--wrist-friction` have not run on the arms.
+
+**Running the teleop with the sensor's force (`--ft arm`).** Both arms keep
+the 4C law; what changes is where the follower's force comes from: the
+external torque on J1-J4 that it sends to the leader is the sensor's wrench
+(the gripper's weight removed, through the Jacobian transpose), not the
+estimate from the follower's dynamics model. So the follower's own friction
+and model error no longer reach the leader as force, and only what touches
+the gripper does (a push on the forearm arrives through the position coupling
+alone). With the launcher (`workspace/wam`, `workspace/wam_settings.sh`):
+
+1. `wam ft-cal` once per gripper (below): it writes
+   `config/follower-slax-skid-ft/ft_tool.conf`.
+2. `FOLLOWER_EXTRA="--ft arm --ft-tool $FT_TOOL_IN"` in `wam_settings.sh`.
+3. Both arms at home; Shift-Idle the follower before `wam teleop` (the slax
+   sensor only answers once the arm is in Idle). The follower's pane must
+   print `Force/torque sensor: read every cycle; J1-J4's external torque sent
+   to the leader is the sensor's.` and the gripper's mass.
+4. Activate and link as usual. The sensor's zero is taken at the link pose:
+   keep clear of the gripper between `l` and Enter. `wam ft-zero` takes it
+   again at any time (nothing touching the gripper for a second).
+5. `wam pp on` drops to position-position from any terminal and `wam pp off`
+   goes back; `wam 4c off` and `wam 4c on` switch the force channels alone.
+
+As run that day: force gain 0.4 on both arms, 35 Hz notch, no integral action
+(`--ki-scale 0`, and ki 0 in the follower's configuration), the leader on the
+cable model with 0.2 of its friction fed forward, the follower on the legacy
+model with slax's parameters. What the gripper's calibration leaves (about
+1 N, and up to 2 N more near the ends of J7's travel, see below) appears to
+the leader as a contact force.
 
 | Option | What it does |
 | --- | --- |
@@ -390,6 +424,9 @@ ends with J7 0.35 rad either way (about what the teleop reaches) and the
 first pose again: the script fits where J7 is at the sync angle
 (`--j7-window 0.1`) and compares the rest with that fit, so the load and the
 sensor's drift over the run are printed, not fitted.
+The second run, with this table, was accepted: 0.957 kg, centre of mass
+54 mm out, 0.74 N rms left (worst pause 1.3 N); that is the file in
+`config/follower-slax-skid-ft/`.
 
 The fit prints the mass, the centre of mass, the sensor's rotation, what is
 left unexplained and a table of every pause against the fit, and writes the

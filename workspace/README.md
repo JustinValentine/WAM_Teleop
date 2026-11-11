@@ -24,3 +24,6 @@ is the slax arm with the skid gripper and F/T sensor
 (`config/follower-slax-skid-ft/`, `src/lib/follower_beta_slax_skid_hand.h`).
 The parameters of the other base arm, used until then, are kept in
 `src/lib/iros_base/`.
+`wam_settings.sh` is as it ran that afternoon: 4C with force gain 0.4, no
+integral action, and the follower's force on J1-J4 taken from its
+force/torque sensor (`--ft arm`, the package README's section on the sensor).

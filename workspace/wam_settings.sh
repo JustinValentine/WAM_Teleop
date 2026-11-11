@@ -10,10 +10,12 @@ CONTAINER=wam_ros_4c
 J6_FRICTION=0.20   # 0.30 until 2026-09-28
 
 # Teleop (IROS demo settings, 2026-09-25)
-LEADER_ARGS="--law u4 --force-gain 0.3 --force-notch 35 --wrist --j6-friction $J6_FRICTION"
+# force gain: 0.3 at IROS and in the first runs on odin (stable); 0.5 on 2026-11-11 15:07 grew a
+# 7.6 Hz swing of J2 and J4 on both arms within 24 s until the leader faulted; 0.4 from then on.
+LEADER_ARGS="--law u4 --force-gain 0.4 --force-notch 35 --wrist --j6-friction $J6_FRICTION"
 # odin, 2026-11-11: the follower is slax with the skid gripper (no BarrettHand, so no --hand)
 # and its own configuration, a copy of Serg's (config/follower-slax-skid-ft/ORIGIN.txt).
-FOLLOWER_ARGS="--sync wam8g --law u4 --force-gain 0.3 --force-notch 35"
+FOLLOWER_ARGS="--sync wam8g --law u4 --force-gain 0.4 --force-notch 35"
 FOLLOWER_CONF=/home/user/wam_ros/wam_ws/src/wam_teleop/config/follower-slax-skid-ft/follower.conf
 HAND_CONTROLLER=no    # the Sony navigation controller -> hand chain (yes on thor; no hand on slax)
 SPREAD_POSES=yes      # L2 + X steps the spread 0/50/100%; no: the grasp only, spread at 0%
@@ -52,8 +54,13 @@ FT_TOOL_IN=/home/user/wam_ros/$FT_TOOL                                 # the sam
 FT_ORIGIN_Z=""   # m from the tool plate to the sensor's measuring origin, if its drawing gives it
 # 2026-11-11: the leader on the cable model (WAM 153's fit of that night), 0.2 of its friction in
 # the feedforward; raise it live with the key m. First use in a linked teleop: "" goes back to legacy.
-LEADER_EXTRA="--model cable --ff-friction 0.2"
-FOLLOWER_EXTRA=""
+# --ki-scale 0 (2026-11-11, user): no integral action in J1-J4's position coupling, on both arms.
+LEADER_EXTRA="--model cable --ff-friction 0.2 --ki-scale 0"
+# 2026-11-11: the force the follower sends the leader for J1-J4 is the force/torque sensor's
+# (--ft arm), with the gripper's weight removed by the calibration `wam ft-cal` wrote that day.
+# First session with it: 16:08 that day. Back to recording the sensor only:
+# FOLLOWER_EXTRA="--ft log --ki-scale 0".
+FOLLOWER_EXTRA="--ft arm --ft-tool $FT_TOOL_IN --ki-scale 0"
 
 # Force/torque sensor on the follower, and the wrist (wam_teleop/README.md,
 # "Force/torque sensor and the wrist"). Not run on the robots yet: one step at
