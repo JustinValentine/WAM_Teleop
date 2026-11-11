@@ -125,6 +125,11 @@ On a 7-DOF WAM the program holds the wrist (J5-J7) at its start angles with the 
 
 ## wam8g leader with a P2 follower
 
+**The controllers as they run now, in one place: [CONTROLLERS.md](CONTROLLERS.md)**
+(the torque on each arm, the position coupling and its gains, the law, the
+external-torque estimates, the force/torque sensor's path, and what lives in
+the Barrett libraries and not in this repository).
+
 `leader_wam8g` drives the eight-joint wam8g (CANopen libbarrett: J1-J4 arm,
 passive J5, Alberta wrist J6-J8) as the leader for the seven-joint P2
 `follower`. The message between them is unchanged (J1-J4 plus the P2's
