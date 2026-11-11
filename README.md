@@ -364,16 +364,27 @@ and about 2 Nm between pointing up and down). `wrist`, `arm` and `all`
 therefore refuse to start without the gripper's mass and centre of mass.
 `scripts/ft_tool_cal.py` fits them from a recording, together with how the
 sensor's axes sit in the tool frame and its sign convention, so nothing about
-the mounting is assumed:
+the mounting is assumed.
 
-1. `FOLLOWER_EXTRA="--ft log"` in `wam_settings.sh`, `wam teleop`, link.
-2. With nothing touching the gripper (and the hand as it will be used), turn
-   the wrist through its range and move the arm between a few poses, pausing a
-   second or two in each; about a minute.
-3. `wam stop`, then `wam ft-cal`. It prints the fit (mass, centre of mass,
-   the sensor's rotation about the tool axis, what is left unexplained) and
-   writes the file only if the poses covered enough directions and the fit is
-   clean; otherwise it says what was missing.
+`wam ft-cal` makes that recording by itself and fits it: with the teleop
+stopped, the follower at home and in Idle (so that the sensor is powered), it
+starts the follower alone (`follower --ft-cal`, no leader, no ROS). After
+Shift-Activate and Enter the arm goes to the sync pose and turns the wrist
+alone through 14 poses (`src/lib/ft_cal_poses.h`: J5 and J6 up to 0.9 rad
+either way, J7 up to 1.0 rad), 2.5 s still in each, and comes back; about a
+minute and a half. Nothing can touch the gripper on the way, which a
+recording made while teleoperating cannot promise (the first one here had
+40 N of contact in it and was refused). Keep clear, give the gripper's cable
+slack, and keep the E-stop at hand; Ctrl-C stops the run and the arm holds.
+The fit prints the mass, the centre of mass, the sensor's rotation and what
+is left unexplained, and writes the file only if it is clean.
+`workspace/tools/ft_cal_check` shows, without the robot, how well the poses
+spread gravity over the tool frame for a follower configuration (0.68, 0.45,
+0.39 for the slax follower; the fit needs 0.15).
+
+`wam ft-cal FILE` fits a recording made another way (`FOLLOWER_EXTRA="--ft
+log"`, a teleop in which nothing touches the gripper while the wrist is
+turned through its range and the arm pauses in a few poses).
 
 The follower takes the sensor's zero at the link pose (after `l`, before
 Enter: keep clear of the gripper), which also removes its drift since the last

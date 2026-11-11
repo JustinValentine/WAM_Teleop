@@ -32,6 +32,7 @@
 #include "lib/follower.h"
 #include "lib/ft_barrett.h"
 #include "lib/ft_systems.h"
+#include "lib/ft_cal_poses.h"
 #include "lib/background_state_publisher.h"
 #include "lib/clean_exit.h"
 #include "lib/cpu_latency.h"
@@ -134,6 +135,9 @@ void printUsage(const std::string& programName, const std::string& remoteHost, i
     std::cout << "       --ft-tool: the gripper's mass, centre of mass and the sensor's axes, from" << std::endl;
     std::cout << "           scripts/ft_tool_cal.py on a recording made with --ft log. wrist, arm and all need it:" << std::endl;
     std::cout << "           without it the gripper's own weight would reach the leader as the wrist turns." << std::endl;
+    std::cout << "       --ft-cal: no teleop: the arm goes to the sync pose and turns the gripper through its" << std::endl;
+    std::cout << "           calibration poses by itself (lib/ft_cal_poses.h), recording the sensor (--record)" << std::endl;
+    std::cout << "           for scripts/ft_tool_cal.py; `wam ft-cal` runs both." << std::endl;
     std::cout << "       --ft-filter: the low-pass on the measured wrench in Hz (0: off), default 40." << std::endl;
     std::cout << "       --wrist-friction: a friction feedforward on this arm's J5-J7 in Nm (0 to 0.5), one value or" << std::endl;
     std::cout << "           three comma-separated, in the direction the leader's wrist turns; default 0 (off)." << std::endl;
@@ -157,6 +161,7 @@ struct FollowerOptions {
     bool ft = false;           // --ft: read (and record) the force/torque sensor
     bool ftWrist = false;      // --ft wrist|all
     bool ftArm = false;        // --ft arm|all
+    bool ftCal = false;        // --ft-cal: no teleop; the arm turns the gripper through its calibration poses
     std::string ftToolFile;    // --ft-tool
     ft_core::Tool ftTool;      // ... loaded
     double ftFilter = ft_core::Limits().filterHz;  // --ft-filter, Hz
@@ -230,6 +235,9 @@ bool parseOptions(int argc, char** argv, FollowerOptions* o) {
             o->ftWrist = (v == "wrist" || v == "all");
             o->ftArm = (v == "arm" || v == "all");
             ++i;
+        } else if (a == "--ft-cal") {
+            o->ftCal = true;
+            o->ft = true;  // read and record the sensor, as --ft log
         } else if (a == "--ft-tool") {
             std::string error;
             if (i + 1 >= argc || !o->ftTool.load(argv[i + 1], &error)) {
@@ -270,6 +278,14 @@ bool parseOptions(int argc, char** argv, FollowerOptions* o) {
         printf("follower: --ft wrist, arm and all need --ft-tool (the gripper's calibration): without it the\n"
                "gripper's own weight would push the leader as the wrist turns. Record with --ft log, then run\n"
                "scripts/ft_tool_cal.py on the recording.\n");
+        return false;
+    }
+    if (o->ftCal && o->app.record.empty()) {
+        printf("follower: --ft-cal needs --record FILE: the recording is what scripts/ft_tool_cal.py fits.\n");
+        return false;
+    }
+    if (o->ftCal && o->hand) {
+        printf("follower: --ft-cal runs without --hand (the gripper stays as it is).\n");
         return false;
     }
     if (!o->ft && !o->ftToolFile.empty()) {
@@ -688,6 +704,85 @@ template <size_t DOF> int wam_main(int argc, char **argv, ProductManager &pm, sy
     }
     rt_thread::print("Follower", follower.getRealtimeReport());
 
+    // --ft-cal: no teleop. The arm goes to the sync pose and turns the gripper
+    // through the directions of gravity by itself (lib/ft_cal_poses.h), holding
+    // still in each pose, while --record writes the sensor's raw readings; then
+    // it comes back to where it started. scripts/ft_tool_cal.py (`wam ft-cal`)
+    // fits the gripper from that recording: nothing can have touched it.
+    int ftCalResult = 0;  // the program's exit code: 3 if the run did not finish
+    if (options.ftCal && DOF == 7) {
+        going = false;  // skips the teleop's prompt below
+        ftCalResult = 3;
+        const jp_type startPos = wam.getJointPositions();
+        SafetyModule* sm = pm.getSafetyModule();
+        // While the run may go on: no stop asked for, the arm still active.
+        auto mayGoOn = [&]() -> bool {
+            if (clean_exit::requested()) {
+                return false;
+            }
+            try {
+                return sm == NULL || sm->getMode() == SafetyModule::ACTIVE;
+            } catch (const std::exception&) {
+                return true;  // a lost reply: asked again a tenth of a second later
+            }
+        };
+        // A move, then `hold` seconds at rest; false if the run was stopped.
+        auto moveAndHold = [&](const jp_type& target, double hold) -> bool {
+            wam.moveTo(target, false, ft_cal::MOVE_VELOCITY, ft_cal::MOVE_ACCELERATION);
+            while (!wam.moveIsDone()) {
+                if (!mayGoOn()) {
+                    return false;
+                }
+                btsleep(0.1);
+            }
+            for (double waited = 0.0; waited < hold; waited += 0.1) {
+                if (!mayGoOn()) {
+                    return false;
+                }
+                btsleep(0.1);
+            }
+            return true;
+        };
+        printf("\nGripper calibration (--ft-cal). The arm moves BY ITSELF: to the sync pose, then the wrist alone\n"
+               "through %d poses (J5 and J6 up to 0.9 rad either way, J7 up to 1.0 rad), %.1f s still in each, then\n"
+               "back to where it is now; about %d s in all. Nothing may touch the gripper, and its cable needs\n"
+               "slack for those turns. Keep the E-stop at hand; Ctrl-C stops the run and the arm holds.\n"
+               "[Enter] starts it, x [Enter] leaves: ",
+               ft_cal::POSES, ft_cal::HOLD_SECONDS, (int) (ft_cal::POSES * (ft_cal::HOLD_SECONDS + 3.0)) + 20);
+        fflush(stdout);
+        if (clean_exit::readLine(&line) && (line.empty() || line[0] != 'x') && !clean_exit::requested()) {
+            printf("  to the sync pose ...");
+            fflush(stdout);
+            bool ok = moveAndHold(SYNC_POS, 1.0);
+            printf(ok ? " there.\n" : " stopped.\n");
+            for (int k = 0; ok && k < ft_cal::POSES; ++k) {
+                jp_type pose = SYNC_POS;
+                for (int j = 0; j < 3; ++j) {
+                    pose[4 + j] = ft_cal::WRIST[k][j];
+                }
+                printf("  pose %d of %d (J5 %.2f, J6 %.2f, J7 %.2f) ...", k + 1, ft_cal::POSES, ft_cal::WRIST[k][0],
+                       ft_cal::WRIST[k][1], ft_cal::WRIST[k][2]);
+                fflush(stdout);
+                ok = moveAndHold(pose, ft_cal::HOLD_SECONDS);
+                printf(ok ? " held.\n" : " stopped.\n");
+            }
+            if (ok) {
+                printf("  back to the start ...");
+                fflush(stdout);
+                ok = moveAndHold(SYNC_POS, 0.0) && moveAndHold(startPos, 0.5);
+                printf(ok ? " there.\n" : " stopped.\n");
+            }
+            if (ok) {
+                ftCalResult = 0;
+                printf("All %d poses are recorded.\n", ft_cal::POSES);
+            } else {
+                printf("The run was stopped before its end: the recording is not complete.\n");
+            }
+        } else {
+            printf("Not started.\n");
+        }
+    }
+
     while (going) {
         printf(">>> ");
         if (!clean_exit::readLine(&line)) {
@@ -897,5 +992,5 @@ template <size_t DOF> int wam_main(int argc, char **argv, ProductManager &pm, sy
 
     clean_exit::waitUntilNotActive(pm.getSafetyModule());
 
-    return 0;
+    return ftCalResult;
 }

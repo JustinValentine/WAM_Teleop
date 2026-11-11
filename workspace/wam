@@ -14,9 +14,12 @@
 #   wam pp on|off  plain P-P on both arms mid-teleop ('p' in either pane too)
 #   wam log [file ...]  timing and link summary of the latest (or the given)
 #                recordings the arm programs wrote themselves (RECORD=native)
-#   wam ft-cal [file]  fit the gripper beyond the follower's force/torque
-#                sensor from the latest (or the given) follower recording made
-#                with --ft log (wam_settings.sh, "Force/torque sensor")
+#   wam ft-cal   calibrate the gripper beyond the follower's force/torque
+#                sensor: the follower alone goes to the sync pose and turns
+#                its wrist through a set of poses BY ITSELF (about a minute),
+#                then the gripper's mass and centre of mass are fitted from
+#                that recording. wam ft-cal FILE fits a given recording
+#                instead (one made with --ft log, nothing touching the gripper)
 #   wam ft-zero  take the force/torque sensor's zero again mid-teleop, against
 #                its drift ('z' in the follower's pane too): nothing may touch
 #                the gripper for the second it takes
@@ -115,6 +118,14 @@ container_run() {
 		[ "${SPREAD_POSES:-yes}" = yes ] || FOLLOWER_ARGS="$FOLLOWER_ARGS --no-spread-poses"
 		# shellcheck disable=SC2086
 		exec rosrun wam_teleop follower $FOLLOWER_ARGS $FOLLOWER_EXTRA $(arm_options follower "$2") 127.0.0.1 5554 5555 ;;
+	ftcal)
+		# The follower alone, no ROS, no leader: follower --ft-cal turns the gripper
+		# through its calibration poses and records the sensor (wam ft-cal).
+		export BARRETT_CONFIG_FILE=$FOLLOWER_CONF
+		# shellcheck disable=SC2046
+		exec "$BIN/follower" --sync wam8g --ft-cal --no-ros --record "$IN/teleop_logs/ftcal_${2}_follower.tlog" \
+			$([ -n "$FOLLOWER_CPU" ] && [ -d "/sys/devices/system/cpu/cpu$FOLLOWER_CPU" ] && echo "--rt-cpu $FOLLOWER_CPU") \
+			127.0.0.1 5554 5555 ;;
 	bag)
 		wait_master || exit 1
 		# shellcheck disable=SC2086
@@ -622,13 +633,28 @@ show_log() {
 # recording made with `follower --ft log` (the given file, or the latest
 # follower recording) and written where FT_TOOL in wam_settings.sh points.
 ft_cal() {
-	local file=${1:-}
+	local file=${1:-} stamp rc
 	if [ -z "$file" ]; then
-		file=$(ls -t "$REPO"/teleop_logs/teleop_*_follower.tlog 2>/dev/null | head -n 1)
-		[ -n "$file" ] || { echo "No follower recordings in $REPO/teleop_logs."; return 1; }
+		# No recording given: the follower makes one, moving by itself (follower --ft-cal).
+		if teleop_running || saber_running || running "$P_OTHER_ARM"; then
+			echo "An arm program is running: wam stop first (the calibration runs the follower alone)."
+			return 1
+		fi
+		ensure_container
+		check_can "$FOLLOWER_CAN" "P2 follower" || return 1
+		stamp=$(date +%Y%m%d_%H%M%S)
+		echo "The follower will move by itself (sync pose, then its wrist through the calibration poses)."
+		echo "Put it at home, Shift-Idle it so that the sensor is powered, and keep clear of the gripper."
+		docker exec -it "$CONTAINER" "$IN/wam" _run ftcal "$stamp"
+		rc=$?
+		file=$REPO/teleop_logs/ftcal_${stamp}_follower.tlog
+		if [ $rc -ne 0 ] || [ ! -s "$file" ]; then
+			echo "The calibration run did not finish (exit $rc): nothing was fitted."
+			return 1
+		fi
 	fi
 	python3 "$REPO/wam_ws/src/wam_teleop/scripts/ft_tool_cal.py" "$file" -o "$REPO/$FT_TOOL" ${FT_ORIGIN_Z:+--origin-z "$FT_ORIGIN_Z"} &&
-		echo "Use it with FOLLOWER_EXTRA=\"--ft wrist --ft-tool $IN/$FT_TOOL\" in wam_settings.sh."
+		echo "Use it with FOLLOWER_EXTRA=\"--ft arm --ft-tool \$FT_TOOL_IN\" in wam_settings.sh (arm: J1-J4's force from the sensor; wrist, all: see the README)."
 }
 
 case "${1:-}" in

@@ -31,10 +31,14 @@ const double FOLLOWER_SYNC_POSE[7] = {
  * except two kd tuned live on 2026-09-24 in 4C: J4's 1.2 instead of 0.8 (as
  * on the follower), against a 5 Hz swing of the two elbows; J1's 8.3 instead
  * of 10 (the follower's), against a grainy J1.
+ * 2026-11-11, on odin (WAM 153 base, slax follower): kd on J1 and J2 set to
+ * the follower's, 10 and 8 (8.3 and 6 until then), so that J1-J3 have the same
+ * kp and kd on both arms; with force gain 0.4 the pair showed lightly damped
+ * swings at 8 Hz (J2, J4) and 12 Hz (J2, J3). J3 already matched (400, 3.3).
  * J5-J8 keep the robot's configured gains (config/wam8g/wam8g.conf). */
 const double ARES_KP[4] = {750, 1000, 400, 200};
 const double ARES_KI[4] = {2.5, 1, 2.5, 0.5};
-const double ARES_KD[4] = {8.3, 6, 3.3, 1.2};
+const double ARES_KD[4] = {10, 8, 3.3, 1.2};
 const double ARES_CONTROL_SIGNAL_LIMIT[4] = {50, 80, 50, 30};
 const double ARES_INTEGRATOR_LIMIT[4] = {20, 10, 20, 60};
 
