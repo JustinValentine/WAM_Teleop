@@ -194,9 +194,9 @@
   1.000049497477938e-05
  ],
  "excitation": [
-  "/private/tmp/claude-501/-Users-justinvalentine-Projects/a19b6e72-99d2-461d-a4ef-5fef79b4f06e/scratchpad/dyn-agent/fit153/repo/excitation/wam153_20261111_2.dat",
-  "/private/tmp/claude-501/-Users-justinvalentine-Projects/a19b6e72-99d2-461d-a4ef-5fef79b4f06e/scratchpad/dyn-agent/fit153/repo/excitation/wam153_20261111_3.dat",
-  "/private/tmp/claude-501/-Users-justinvalentine-Projects/a19b6e72-99d2-461d-a4ef-5fef79b4f06e/scratchpad/dyn-agent/fit153/repo/excitation/wam153_20261111_4.dat"
+  "excitation/wam153_20261111_2.dat",
+  "excitation/wam153_20261111_3.dat",
+  "excitation/wam153_20261111_4.dat"
  ],
  "segments": []
 }
