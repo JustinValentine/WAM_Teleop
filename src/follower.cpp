@@ -10,6 +10,7 @@
 // A version of 7-DOF follower.
 
 #include "lib/external_torque.h"
+#include <algorithm>
 #include <atomic>
 #include <iostream>
 #include <cstdlib>
@@ -743,12 +744,21 @@ template <size_t DOF> int wam_main(int argc, char **argv, ProductManager &pm, sy
             }
             return true;
         };
+        double turnLo[3] = {0.0, 0.0, 0.0}, turnHi[3] = {0.0, 0.0, 0.0};  // the table's turns from the sync pose
+        for (int k = 0; k < ft_cal::POSES; ++k) {
+            for (int j = 0; j < 3; ++j) {
+                turnLo[j] = std::min(turnLo[j], ft_cal::WRIST[k][j] - SYNC_POS[4 + j]);
+                turnHi[j] = std::max(turnHi[j], ft_cal::WRIST[k][j] - SYNC_POS[4 + j]);
+            }
+        }
         printf("\nGripper calibration (--ft-cal). The arm moves BY ITSELF: to the sync pose, then the wrist alone\n"
-               "through %d poses (J5 and J6 up to 0.9 rad either way, J7 up to 1.0 rad), %.1f s still in each, then\n"
-               "back to where it is now; about %d s in all. Nothing may touch the gripper, and its cable needs\n"
-               "slack for those turns. Keep the E-stop at hand; Ctrl-C stops the run and the arm holds.\n"
+               "through %d poses (from the sync pose: J5 %+.2f to %+.2f rad, J6 %+.2f to %+.2f, J7 %+.2f to %+.2f),\n"
+               "%.1f s still in each, then back to where it is now; about %d s in all. Nothing may touch the\n"
+               "gripper, and its cable needs slack for those turns. Keep the E-stop at hand; Ctrl-C stops the\n"
+               "run and the arm holds.\n"
                "[Enter] starts it, x [Enter] leaves: ",
-               ft_cal::POSES, ft_cal::HOLD_SECONDS, (int) (ft_cal::POSES * (ft_cal::HOLD_SECONDS + 3.0)) + 20);
+               ft_cal::POSES, turnLo[0], turnHi[0], turnLo[1], turnHi[1], turnLo[2], turnHi[2], ft_cal::HOLD_SECONDS,
+               (int) (ft_cal::POSES * (ft_cal::HOLD_SECONDS + 3.0)) + 20);
         fflush(stdout);
         if (clean_exit::readLine(&line) && (line.empty() || line[0] != 'x') && !clean_exit::requested()) {
             printf("  to the sync pose ...");

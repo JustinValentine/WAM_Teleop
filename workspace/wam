@@ -633,7 +633,7 @@ show_log() {
 # recording made with `follower --ft log` (the given file, or the latest
 # follower recording) and written where FT_TOOL in wam_settings.sh points.
 ft_cal() {
-	local file=${1:-} stamp rc
+	local file=${1:-} stamp rc window
 	if [ -z "$file" ]; then
 		# No recording given: the follower makes one, moving by itself (follower --ft-cal).
 		if teleop_running || saber_running || running "$P_OTHER_ARM"; then
@@ -653,7 +653,10 @@ ft_cal() {
 			return 1
 		fi
 	fi
-	python3 "$REPO/wam_ws/src/wam_teleop/scripts/ft_tool_cal.py" "$file" -o "$REPO/$FT_TOOL" ${FT_ORIGIN_Z:+--origin-z "$FT_ORIGIN_Z"} &&
+	# A recording of the calibration run is fitted where J7 is at the sync angle: turning J7 loads the
+	# sensor by itself (lib/ft_cal_poses.h); its other poses are then compared with the fit.
+	case "$(basename "$file")" in ftcal_*) window="--j7-window 0.1" ;; *) window= ;; esac
+	python3 "$REPO/wam_ws/src/wam_teleop/scripts/ft_tool_cal.py" "$file" -o "$REPO/$FT_TOOL" $window ${FT_ORIGIN_Z:+--origin-z "$FT_ORIGIN_Z"} &&
 		echo "Use it with FOLLOWER_EXTRA=\"--ft arm --ft-tool \$FT_TOOL_IN\" in wam_settings.sh (arm: J1-J4's force from the sensor; wrist, all: see the README)."
 }
 

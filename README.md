@@ -370,17 +370,38 @@ the mounting is assumed.
 stopped, the follower at home and in Idle (so that the sensor is powered), it
 starts the follower alone (`follower --ft-cal`, no leader, no ROS). After
 Shift-Activate and Enter the arm goes to the sync pose and turns the wrist
-alone through 14 poses (`src/lib/ft_cal_poses.h`: J5 and J6 up to 0.9 rad
-either way, J7 up to 1.0 rad), 2.5 s still in each, and comes back; about a
-minute and a half. Nothing can touch the gripper on the way, which a
-recording made while teleoperating cannot promise (the first one here had
-40 N of contact in it and was refused). Keep clear, give the gripper's cable
-slack, and keep the E-stop at hand; Ctrl-C stops the run and the arm holds.
-The fit prints the mass, the centre of mass, the sensor's rotation and what
-is left unexplained, and writes the file only if it is clean.
-`workspace/tools/ft_cal_check` shows, without the robot, how well the poses
-spread gravity over the tool frame for a follower configuration (0.68, 0.45,
-0.39 for the slax follower; the fit needs 0.15).
+alone through 15 poses (`src/lib/ft_cal_poses.h`), 2.5 s still in each, and
+comes back; about a minute and a half. Nothing can touch the gripper on the
+way, which a recording made while teleoperating cannot promise (the first
+one here had 40 N of contact in it and was refused). Keep clear, give the
+gripper's cable slack, and keep the E-stop at hand; Ctrl-C stops the run and
+the arm holds.
+
+In the twelve poses that are fitted J5 turns from 0.9 rad one way to 1.5 rad
+the other and J6 0.9 rad either way, with J7 at the sync pose's angle. The
+first run on slax (2026-11-11, J7 up to a radian either way) showed why: the
+sensor read a load that followed J7 and nothing else, 5 N a radian beyond
+the sync angle and 1 to 2 N a radian short of it, through the middle of the
+sensor and with a twist about the tool axis that grew with the angle, less
+on the way back than on the way out. That is something winding up across
+J7, not the gripper's weight, and it spoiled the fit (0.95 kg with 2.1 N
+unexplained; 0.945 kg with 0.8 N where J7 was at the sync angle). The table
+ends with J7 0.35 rad either way (about what the teleop reaches) and the
+first pose again: the script fits where J7 is at the sync angle
+(`--j7-window 0.1`) and compares the rest with that fit, so the load and the
+sensor's drift over the run are printed, not fitted.
+
+The fit prints the mass, the centre of mass, the sensor's rotation, what is
+left unexplained and a table of every pause against the fit, and writes the
+file only if the fit leaves less than 1 N rms and no pause is more than 2 N
+off. On slax it reports the sensor's axis about 10 degrees off the tool
+axis, about the J6 axis: a bolted sensor cannot be tilted, so this is more
+likely the wrist's zero (slax is zeroed by its home pose only, so J6's zero
+is wherever the wrist sat at start-up) or the sensor mixing its axes; the
+file keeps the axes as fitted, which is what removes the weight best.
+`workspace/tools/ft_cal_check` shows, without the robot, how well the fitted
+poses spread gravity over the tool frame for a follower configuration (the
+fit needs 0.15 in the weakest direction).
 
 `wam ft-cal FILE` fits a recording made another way (`FOLLOWER_EXTRA="--ft
 log"`, a teleop in which nothing touches the gripper while the wrist is

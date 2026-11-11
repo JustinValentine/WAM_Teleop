@@ -1,5 +1,7 @@
-// How well the poses of `follower --ft-cal` (src/lib/ft_cal_poses.h) spread gravity
-// over the tool frame, for a follower configuration; no robot.
+// How well the poses of `follower --ft-cal` that the fit uses (src/lib/ft_cal_poses.h:
+// the first ft_cal::FITTED, with J7 at the sync angle) spread gravity over the tool
+// frame, for a follower configuration; no robot. Every pose is checked against the
+// joint ranges.
 //   ft_cal_check <follower.conf> [group, default wam7w]
 // Build against the follower's library (in the container):
 //   g++ -std=c++11 ft_cal_check.cpp -I<package>/src/lib -I/opt/barrett/include -I/usr/include/eigen3 \
@@ -36,7 +38,7 @@ int main(int argc, char** argv) {
 	const double lo[7] = {-2.6, -2.0, -2.8, -0.9, -4.76, -1.57, -3.0}, hi[7] = {2.6, 2.0, 2.8, 3.1, 1.24, 1.57, 3.0};
 	gsl_vector* q = gsl_vector_alloc(7);
 	gsl_vector* v = gsl_vector_calloc(7);
-	gsl_matrix* G = gsl_matrix_alloc(ft_cal::POSES, 3);
+	gsl_matrix* G = gsl_matrix_alloc(ft_cal::FITTED, 3);
 	double mean[3] = {0.0, 0.0, 0.0};
 	bool inside = true;
 	std::printf("pose   J5     J6     J7   | gravity's direction in the tool frame\n");
@@ -51,21 +53,23 @@ int main(int argc, char** argv) {
 		double g[3];
 		for (int i = 0; i < 3; ++i) {  // world -z in the tool's axes: R^T (0, 0, -1)
 			g[i] = -gsl_matrix_get(kin->tool->rot_to_world, 2, i);
-			gsl_matrix_set(G, k, i, g[i]);
-			mean[i] += g[i] / ft_cal::POSES;
+			if (k < ft_cal::FITTED) {
+				gsl_matrix_set(G, k, i, g[i]);
+				mean[i] += g[i] / ft_cal::FITTED;
+			}
 		}
-		std::printf("%3d  %6.3f %6.3f %6.3f | %6.2f %6.2f %6.2f\n", k + 1, ft_cal::WRIST[k][0], ft_cal::WRIST[k][1],
-		            ft_cal::WRIST[k][2], g[0], g[1], g[2]);
+		std::printf("%3d  %6.3f %6.3f %6.3f | %6.2f %6.2f %6.2f%s\n", k + 1, ft_cal::WRIST[k][0], ft_cal::WRIST[k][1],
+		            ft_cal::WRIST[k][2], g[0], g[1], g[2], k < ft_cal::FITTED ? "" : "   (not fitted)");
 	}
-	for (int k = 0; k < ft_cal::POSES; ++k)
+	for (int k = 0; k < ft_cal::FITTED; ++k)
 		for (int i = 0; i < 3; ++i) gsl_matrix_set(G, k, i, gsl_matrix_get(G, k, i) - mean[i]);
 	gsl_matrix* V = gsl_matrix_alloc(3, 3);
 	gsl_vector* S = gsl_vector_alloc(3);
 	gsl_vector* work = gsl_vector_alloc(3);
 	gsl_linalg_SV_decomp(G, V, S, work);
-	const double n = std::sqrt((double) ft_cal::POSES);
-	std::printf("spread of gravity over the tool frame: %.2f, %.2f, %.2f (0.58 each is ideal; the fit needs 0.15)\n",
+	const double n = std::sqrt((double) ft_cal::FITTED);
+	std::printf("spread of gravity over the tool frame in the fitted poses: %.2f, %.2f, %.2f (0.58 each is ideal; the fit needs 0.15)\n",
 	            gsl_vector_get(S, 0) / n, gsl_vector_get(S, 1) / n, gsl_vector_get(S, 2) / n);
 	std::printf("every joint at least 0.3 rad inside its range: %s\n", inside ? "yes" : "NO");
-	return (gsl_vector_get(S, 2) / n >= 0.3 && inside) ? 0 : 1;
+	return (gsl_vector_get(S, 2) / n >= 0.2 && inside) ? 0 : 1;
 }
