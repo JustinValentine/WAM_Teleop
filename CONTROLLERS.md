@@ -104,8 +104,18 @@ model's inertial torque is limited to a few hertz.
 * **Follower** (legacy model): `tau_model = W(q, dq, 0.25 ddq) beta`
   (`RegressorDynamics` in `lib/estimator_systems.h`, the regressor in
   `lib/regressor_W.h`) with the 30 parameters in
-  `lib/follower_beta_slax_skid_hand.h`: gravity, Coriolis, viscous friction
-  and a quarter of the inertial torque; no Coulomb friction.
+  `lib/follower_beta_slax_20261112.h`: gravity, Coriolis, viscous friction
+  and a quarter of the inertial torque; no Coulomb friction. Since
+  2026-11-12 these are fitted on the follower's own excitation runs of that
+  morning, after its first zero calibration, a new gravity calibration and
+  with the gripper mounted that day. On a run that was not fitted they leave
+  1.38 / 1.67 / 0.66 / 0.68 Nm rms on J1-J4 (most of it the friction this
+  model does not have); the parameters used until then
+  (`lib/follower_beta_slax_skid_hand.h`, a lab-mate's fit for the earlier
+  zero and gripper) leave 1.44 / 2.44 / 0.79 / 1.00 Nm there and are off
+  by up to 1.4 Nm of gravity on J2. A cable-drive model fitted on the same
+  runs (`lib/cable_params_slax_20261112.h`: 0.52 / 0.59 / 0.29 / 0.21 Nm) is
+  in the repository but not connected to the follower program yet.
 
 The leader sends its `ext` for J1-J4 to the follower. What the follower sends
 is in the next section.

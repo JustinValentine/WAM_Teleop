@@ -39,9 +39,13 @@
 #include "lib/cpu_latency.h"
 #include "lib/teleop_mode.h"
 #include "lib/safety_watch.h"
-// odin, 2026-11-11: the follower here is slax with the skid gripper and the F/T sensor
-// (Serg's fit); thor's Zeus with its hand is lib/follower_beta_zeus_hand.h.
-#include "lib/follower_beta_slax_skid_hand.h"
+// odin: the follower here is slax with the F/T sensor. 2026-11-12: its own fit, from the
+// excitation runs of that morning, after its first zero calibration, a new gravity calibration
+// and with the gripper mounted that day (lib/follower_beta_slax_20261112.h). Until then Serg's
+// fit of 2026-11-09 for the earlier zero and gripper, lib/follower_beta_slax_skid_hand.h, which
+// on the new runs is off by up to 1.4 Nm of gravity on J2. thor's Zeus with its hand is
+// lib/follower_beta_zeus_hand.h.
+#include "lib/follower_beta_slax_20261112.h"
 #include "lib/estimator_systems.h"
 #include "lib/teleop_app.h"
 #include "lib/teleop_recorder.h"
@@ -533,7 +537,7 @@ template <size_t DOF> int wam_main(int argc, char **argv, ProductManager &pm, sy
         printf("Model: cable (lib/cable_params_zeus_hand.h: ZEUS'S PARAMETERS, not this arm's); feedforward shares: friction %.2f, inertia %.2f;\n"
                "       wrist gravity correction %s.\n", options.ffFriction, options.ffInertia, useGravity ? "on" : "off");
     } else {
-        printf("Model: legacy (lib/follower_beta_slax_skid_hand.h: slax, skid gripper, F/T sensor; Serg's fit of 2026-11-09).\n");
+        printf("Model: legacy (lib/follower_beta_slax_20261112.h: slax, F/T sensor, gripper and calibration of 2026-11-12; its own excitation runs).\n");
     }
 
     // --estimator matched: the commanded torque and the model's other terms
