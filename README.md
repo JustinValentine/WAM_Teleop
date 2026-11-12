@@ -399,7 +399,7 @@ With the Barrett force/torque sensor on the follower's tool plate, the contact
 is measured instead (`src/lib/ft_core.h` has the arithmetic and the reasons).
 Everything is off unless asked for. On the arms so far (odin, 2026-11-11, the
 slax follower with its skid gripper): reading the sensor in the loop (every
-cycle, at most 0.27 ms of loop time), `wam ft-zero`, the gripper's calibration
+cycle, at most 0.30 ms of loop time), `wam ft-zero`, the gripper's calibration
 (`wam ft-cal`, two runs), a teleop session with `--ft arm` (16:08, 21 minutes
 linked) and one with `--ft all` (16:37), in which the leader's wrist force
 gain was raised by key from 0 to 0.2 and then 0.5. `--wrist-friction` has not
@@ -410,9 +410,19 @@ estimate as the follower's force (15:15, the same force gain 0.4): the
 leader's joint velocity between 5 and 20 Hz was 2.8 / 4.2 / 6.9 / 5.8 mrad/s
 rms on J1-J4 against 7.6 / 16.3 / 14.2 / 17.8, the lightly damped swings at 8
 and 12 Hz were gone, and the force the leader received no longer had the
-follower's friction in it (its mean along the motion about 0). In free motion
-the sensor read 1.6 N (median) after the gripper's weight was removed, under
-2.9 N for nine tenths of the time.
+follower's friction in it (its mean along the motion about 0). Over the whole
+linked session, contacts included, the sensor read 1.6 N (median) after the
+gripper's weight was removed, under 2.9 N for nine tenths of the time.
+
+The calmer session cannot be credited to the sensor alone. Between the two
+the leader's kd on J1 and J2 went from 8.3 and 6 to 10 and 8, the follower's
+integral gains were switched off, and the packet ages, which depend on how
+the two loops happened to start, summed to 2 ms instead of 4 ms. On that day
+the two sessions that swung (15:07 at force gain 0.5, 15:15 at 0.4) were the
+only two with a 4 ms sum, and every session with 2 ms was calm, so the force
+gain, the force's source and the delay cannot be told apart from these
+recordings. The age-compensated reference (in use from 16:37) removes the
+delay's part; the comparison should be repeated with it.
 
 **Running the teleop with the sensor's force (`--ft arm`).** Both arms keep
 the 4C law; what changes is where the follower's force comes from: the

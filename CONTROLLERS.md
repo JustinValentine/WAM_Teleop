@@ -193,8 +193,19 @@ forearm on the Alberta wrist, the follower's tool 6 cm past on the WAM wrist).
 A force on the gripper therefore does not reach the operator as one force at
 the hand: against what a force at the leader's own hand would need, the copy
 gave J1 102 %, J2 97 %, J3 73 %, J4 80 %, J6 182 %, J7 143 % and J8 24 % in the
-16:37 session. The remainder acts along the arm's elbow swivel, which the hand
-cannot resist: pushing down on a table with 16-24 N raised both elbows by
-6-9 cm. The leader's friction used to hold the elbow; with half of it
-compensated it no longer does. Applying the sensor's wrench through the
-leader's own Jacobian would remove the force channel's part (not built yet).
+16:37 session. The remainder acts along the arm's elbow swivel, which a hand
+on the handle cannot resist.
+
+In that session there were seven downward pushes on a table (16-39 N on the
+gripper). Both elbows rose by 6-9 cm within a second or two in three of them
+(16, 24 and 17 N) and did not in the other four, the hardest (39 N) among
+them, although the remainder pointed the same way in all seven. So the
+remainder is there and is a candidate cause, but the recording does not show
+that it alone decides whether the elbow lifts: the operator's arm, the
+friction state and the pose differ from push to push. In the session before
+(16:08) the same kind of push left a comparable torque along the swivel and
+the elbow stayed. Three things changed between the two: half of the leader's
+friction was compensated (0.2 before), the wrist's force channel was on, and
+the age-compensated reference had removed the coupling's drag. Sending the
+sensor's force through the leader's own Jacobian would remove the force
+channel's part of the remainder; it has not been built.
