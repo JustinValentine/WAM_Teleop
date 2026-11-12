@@ -15,13 +15,13 @@ restart_hold: 1.0     # s; long enough that it does not happen by accident
 
 # The stick moves a target opening; every change of it goes to the gripper as
 # a position request with the same speed and force (lib/robotiq_teleop_core.h).
-stick_speed: 50.0     # mm/s of opening at full stick
-device_speed: 0.3     # 0-1, the gripper's own speed for every request; on a
+stick_speed: 250.0     # mm/s of opening at full stick
+device_speed: 1.0     # 0-1, the gripper's own speed for every request; on a
                       # 2F-140 0 is 30 mm/s and 1 is 250 mm/s: keep it above
                       # stick_speed, or the opening lags the stick
 force: 0.5            # 0-1, the gripper's force for every request; on a
                       # 2F-140 0 is 10 N and 1 is 125 N
-lead: 5.0             # mm the target runs ahead of the measured opening at
+lead: 15.0             # mm the target runs ahead of the measured opening at
                       # most: how far beyond a contact the request stays, and
                       # how far the fingers follow an object that gives way
 
@@ -33,3 +33,9 @@ activation_timeout: 10.0  # s a restart waits for the gripper to be ready
 # The gripper's Modbus settings (its defaults; Robotiq's user interface changes them).
 baud_rate: 115200
 slave_id: 9
+
+# odin, 2026-11-12, first session on the real gripper: 50 mm/s was far too slow for the operator,
+# who asked for the gripper's full speed. So device_speed 1.0 (0.3 before) and stick_speed 250 mm/s
+# (50), the 2F-140's maximum; the stick is still proportional. lead 15 mm (5): at 250 mm/s the
+# fingers cover 5 mm in less than one turn of the loop, and would stop and start at every turn.
+# The price: after the stick is let go the fingers can run on by up to the lead.

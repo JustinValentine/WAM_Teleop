@@ -25,14 +25,19 @@ SPREAD_POSES=yes      # L2 + X steps the spread 0/50/100%; no: the grasp only, s
 # from any terminal (also its first activation after it was powered on); `wam gripper status`
 # shows its state. no: nothing changes.
 # Not together with HAND_CONTROLLER=yes: there is one controller.
-GRIPPER=no
+# odin, 2026-11-12: on, first use.
+GRIPPER=robotiq
 # The gripper's serial adapter, as the container sees it. A name under /dev/serial/by-id/ stays
 # the same when the adapter is plugged in again; /dev/ttyUSB0 can come back as /dev/ttyUSB1.
-GRIPPER_PORT=/dev/ttyUSB0
+# odin, 2026-11-12: the gripper's adapter by its stable name (it is /dev/ttyUSB0 today).
+GRIPPER_PORT=/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0
 # More arguments for launch/robotiq_nav_controller.launch. "auto_activate:=true": activate the
 # gripper when the pane starts, without waiting for L2 + circle (its fingers move, with the arm
 # wherever it is then). "auto_restart:=true": restart without asking whenever the gripper reports
 # a fault that needs it (it then drops what it holds by itself).
+# odin, 2026-11-12: the controller over Bluetooth, which gives /dev/nav_controller (the launch
+# file's default). On its USB cable the kernel names it differently and that link is missing:
+# then GRIPPER_ARGS="joy_dev:=/dev/input/by-id/usb-Sony_Navigation_Controller-joystick".
 GRIPPER_ARGS=""
 # Recording, in teleop_logs/ (2026-11-09):
 #   native  each arm program writes teleop_<time>_<arm>.tlog itself, one row per
