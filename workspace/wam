@@ -144,6 +144,9 @@ container_run() {
 		dir=$(dirname "$FOLLOWER_CONF")
 		mkdir -p /tmp/follower-cal-home && ln -sfn "$dir" /tmp/follower-cal-home/.barrett
 		export HOME=/tmp/follower-cal-home BARRETT_CONFIG_FILE=$FOLLOWER_CONF
+		# The utilities carry no library path of their own (the arm programs do), and
+		# both arms' libraries are called libbarrett.so.3.0: the follower's comes first.
+		export LD_LIBRARY_PATH=/opt/barrett/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}
 		case "$1" in
 		calzero) exec /opt/barrett/bin/bt-wam-zerocal ;;
 		calgravity) exec /opt/barrett/bin/bt-wam-gravitycal ;;
@@ -154,10 +157,20 @@ container_run() {
 		echo "gravity cal writes: $(readlink -f "$HOME/.barrett")/calibration_data/wam7w/gravitycal.conf"
 		echo "there now:"; ls -la "$HOME/.barrett/calibration_data/wam7w/" 2>&1 | sed 's/^/   /'
 		echo "zerocal.conf now:";  sed 's/^/   /' "$HOME/.barrett/calibration_data/wam7w/zerocal.conf" 2>&1
+		local b lib bad=0
 		for b in /opt/barrett/bin/bt-wam-zerocal /opt/barrett/bin/bt-wam-gravitycal "$BIN/dynamics_excitation_legacy"; do
-			[ -x "$b" ] && echo "program:            $b" || echo "program MISSING:    $b"
+			if [ ! -x "$b" ]; then
+				echo "program MISSING:    $b"; bad=1
+			elif ldd "$b" | grep -q "not found"; then
+				echo "program DOES NOT LOAD: $b"; ldd "$b" | grep "not found" | sed 's/^/   /'; bad=1
+			else
+				lib=$(ldd "$b" | awk '/libbarrett/ {print $3}')
+				echo "program:            $b"
+				[ "$lib" = /opt/barrett/lib/libbarrett.so.3.0 ] ||
+					{ echo "   WRONG LIBRARY: $lib (the follower's is /opt/barrett/lib/libbarrett.so.3.0)"; bad=1; }
+			fi
 		done
-		exit 0 ;;
+		exit $bad ;;
 	excite)
 		# One excitation run of the follower (dynamics_excitation_legacy): J1-J4 on the
 		# Fourier trajectory for 60 s, the wrist held at zero; then straight up and home.
