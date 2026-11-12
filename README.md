@@ -345,6 +345,47 @@ recorder, the estimator's arithmetic and the thread setup without libbarrett;
 aged reference, a recording from both arm systems, the estimator systems
 against the classes they replace, and the control thread each library starts.
 
+### Calibrating the follower (`wam cal`, 2026-11-11)
+
+The follower's zero and gravity calibration are Barrett's own utilities
+(`bt-wam-zerocal`, `bt-wam-gravitycal`, from the follower's libbarrett). They
+do not take their files from `BARRETT_CONFIG_FILE` alone: the pose lists
+(`calibration.conf`) and the results (`calibration_data/<arm>/zerocal.conf`,
+`gravitycal.conf`) are looked up under `~/.barrett` when that folder exists
+and under `/etc/barrett` otherwise (`EtcPathRelative` in the library's
+`config.h`). In the lab's container `~/.barrett` is the leader's folder, so
+run plainly they would read the leader's pose lists and write the follower's
+calibration into the leader's folder, where the follower never reads it.
+`workspace/wam` therefore runs them with a `HOME` whose `.barrett` is a link
+to the follower's configuration folder (`config/follower-slax-skid-ft/`,
+which now holds the follower library's `calibration.conf`):
+
+| Command | What runs |
+| --- | --- |
+| `wam cal check` | prints where the calibrations read and write; starts nothing |
+| `wam cal zero` | `bt-wam-zerocal`: the arm moves to two poses (upper arm level with the forearm up; straight up); each joint is turned with the arrow keys until its mark lines up, Enter records the joint's actual angle and its motor angles; writes `zerocal.conf` (`home` and `zeroangle`) |
+| `wam cal gravity` | `bt-wam-gravitycal`: nine poses all around the base, the holding torques measured in each; writes `gravitycal.conf` |
+| `wam ft-cal` | the gripper beyond the force/torque sensor (below) |
+| `wam cal excite NAME` | `dynamics_excitation_legacy`: 60 s on the Fourier trajectory with the wrist held at zero, then straight up and home; writes `excitation/slax_<date>_NAME.dat` |
+
+In that order: the gravity calibration, the gripper's calibration and the
+dynamics identification all depend on the joint zeros. The arm moves by
+itself in every one of them; none activates it.
+
+When this was written (2026-11-11) the slax follower had no zero calibration
+(`zerocal.conf` held the home pose only), so its joint zeros were wherever
+the arm sat when it was first started after power-up. The gripper's calibration of that day
+put the sensor's axis 10 degrees from the tool axis about the J6 axis, which
+a wrist zero of that kind would explain.
+
+Two things about `wam cal zero` with this arm's configuration: the utility
+runs without gravity compensation and the position gains are the teleop's
+(no integral action), so the arm sags a little in the first pose (an
+estimated 2 degrees at J2). The recorded angle is the measured one, so
+joints with scribe marks (J1, J4, J5, J7) are not affected; for J6 ("the
+tool-plate is horizontal") line the tool plate up square to the forearm
+rather than level to the room.
+
 ### Force/torque sensor and the wrist (2026-11-09)
 
 The wrist is coupled position to position only (the laws act on J1-J4), so

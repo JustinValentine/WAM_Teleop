@@ -23,6 +23,14 @@
 #   wam ft-zero  take the force/torque sensor's zero again mid-teleop, against
 #                its drift ('z' in the follower's pane too): nothing may touch
 #                the gripper for the second it takes
+#   wam cal zero     the follower's zero calibration (Barrett's bt-wam-zerocal)
+#   wam cal gravity  the follower's gravity calibration (bt-wam-gravitycal)
+#   wam cal excite NAME  one excitation run of the follower for the dynamics
+#                identification, written to excitation/slax_<date>_NAME.dat
+#   wam cal check    where the two calibrations read and write, nothing started
+#                In all three the follower MOVES BY ITSELF through large poses;
+#                they use the follower's configuration folder (FOLLOWER_CONF),
+#                not the leader's, which Barrett's utilities would pick here.
 #
 # Each pane's output is saved in pane_logs/<start time>_<pane>.log.
 # Starting one demo while the other runs offers to stop it first. The arms
@@ -126,6 +134,37 @@ container_run() {
 		exec "$BIN/follower" --sync wam8g --ft-cal --no-ros --record "$IN/teleop_logs/ftcal_${2}_follower.tlog" \
 			$([ -n "$FOLLOWER_CPU" ] && [ -d "/sys/devices/system/cpu/cpu$FOLLOWER_CPU" ] && echo "--rt-cpu $FOLLOWER_CPU") \
 			127.0.0.1 5554 5555 ;;
+	calzero|calgravity|calcheck)
+		# Barrett's utilities for the follower's arm. They read calibration.conf and write
+		# calibration_data/<arm>/ under ~/.barrett when that folder exists, /etc/barrett
+		# otherwise (EtcPathRelative in the library's config.h); in this container
+		# ~/.barrett is the leader's folder. So they get a HOME whose .barrett is the
+		# follower's configuration folder: the files follower.conf includes.
+		local dir
+		dir=$(dirname "$FOLLOWER_CONF")
+		mkdir -p /tmp/follower-cal-home && ln -sfn "$dir" /tmp/follower-cal-home/.barrett
+		export HOME=/tmp/follower-cal-home BARRETT_CONFIG_FILE=$FOLLOWER_CONF
+		case "$1" in
+		calzero) exec /opt/barrett/bin/bt-wam-zerocal ;;
+		calgravity) exec /opt/barrett/bin/bt-wam-gravitycal ;;
+		esac
+		echo "configuration:      $BARRETT_CONFIG_FILE$([ -r "$BARRETT_CONFIG_FILE" ] || echo '   MISSING')"
+		echo "pose lists:         $HOME/.barrett/calibration.conf -> $(readlink -f "$HOME/.barrett/calibration.conf")$([ -r "$HOME/.barrett/calibration.conf" ] || echo '   MISSING')"
+		echo "zero cal writes:    $(readlink -f "$HOME/.barrett")/calibration_data/wam7w/zerocal.conf"
+		echo "gravity cal writes: $(readlink -f "$HOME/.barrett")/calibration_data/wam7w/gravitycal.conf"
+		echo "there now:"; ls -la "$HOME/.barrett/calibration_data/wam7w/" 2>&1 | sed 's/^/   /'
+		echo "zerocal.conf now:";  sed 's/^/   /' "$HOME/.barrett/calibration_data/wam7w/zerocal.conf" 2>&1
+		for b in /opt/barrett/bin/bt-wam-zerocal /opt/barrett/bin/bt-wam-gravitycal "$BIN/dynamics_excitation_legacy"; do
+			[ -x "$b" ] && echo "program:            $b" || echo "program MISSING:    $b"
+		done
+		exit 0 ;;
+	excite)
+		# One excitation run of the follower (dynamics_excitation_legacy): J1-J4 on the
+		# Fourier trajectory for 60 s, the wrist held at zero; then straight up and home.
+		export BARRETT_CONFIG_FILE=$FOLLOWER_CONF
+		[ -n "$FOLLOWER_CPU" ] && [ -d "/sys/devices/system/cpu/cpu$FOLLOWER_CPU" ] && export EXCITATION_RT_CPU=$FOLLOWER_CPU
+		mkdir -p "$IN/excitation"
+		exec "$BIN/dynamics_excitation_legacy" "$IN/excitation/$2" ;;
 	bag)
 		wait_master || exit 1
 		# shellcheck disable=SC2086
@@ -660,7 +699,58 @@ ft_cal() {
 		echo "Use it with FOLLOWER_EXTRA=\"--ft arm --ft-tool \$FT_TOOL_IN\" in wam_settings.sh (arm: J1-J4's force from the sensor; wrist, all: see the README)."
 }
 
+# wam cal zero|gravity|excite NAME|check: the follower's own calibrations and its
+# excitation run. The arm moves by itself in all of them; nothing here activates it.
+follower_cal() {
+	local what=${1:-} name=${2:-} file
+	case "$what" in
+	zero|gravity|excite|check) ;;
+	*) echo "wam cal zero | gravity | excite NAME | check"; return 1 ;;
+	esac
+	ensure_container
+	if [ "$what" = check ]; then
+		docker exec "$CONTAINER" "$IN/wam" _run calcheck
+		return
+	fi
+	if [ "$what" = excite ]; then
+		if [ -z "$name" ]; then
+			echo "wam cal excite NAME (for example 1_warmup, then 2, 3, 4)"
+			return 1
+		fi
+		file=slax_$(date +%Y%m%d)_$name.dat
+		if [ -e "$REPO/excitation/$file" ]; then
+			echo "excitation/$file exists: choose another name."
+			return 1
+		fi
+	fi
+	if teleop_running || saber_running || running "$P_OTHER_ARM"; then
+		echo "An arm program is running: wam stop first (this runs the follower alone)."
+		return 1
+	fi
+	check_can "$FOLLOWER_CAN" "P2 follower" || return 1
+	case "$what" in
+	zero)
+		echo "Zero calibration of the follower. It moves BY ITSELF to two poses: the upper arm level with the"
+		echo "forearm straight up, and the whole arm straight up. Clear the space above and around it."
+		echo "Put it at home and Shift-Idle it; Shift-Activate when it asks. In each step: Enter moves the arm,"
+		echo "the arrow keys turn the joint (left/right choose the digit, up/down change it), Enter records it."
+		docker exec -it "$CONTAINER" "$IN/wam" _run calzero ;;
+	gravity)
+		echo "Gravity calibration of the follower. It moves BY ITSELF through nine poses all around the base"
+		echo "(the arm stretched forward and to both sides, low and high). Clear the whole workspace and do"
+		echo "not touch the arm; Ctrl-C cancels. Put it at home and Shift-Idle it first: it is zeroed again"
+		echo "at this start, so place it at home with care."
+		docker exec -it "$CONTAINER" "$IN/wam" _run calgravity ;;
+	excite)
+		echo "Excitation run of the follower: after Enter J1-J4 swing through large, fast motions for 60 s,"
+		echo "then the arm goes straight up and home. Clear the whole workspace; keep the E-stop at hand."
+		echo "The recording: excitation/$file"
+		docker exec -it "$CONTAINER" "$IN/wam" _run excite "$file" ;;
+	esac
+}
+
 case "${1:-}" in
+cal) shift; follower_cal "$@" ;;
 teleop) start_teleop ;;
 log) shift; show_log "$@" ;;
 ft-cal) shift; ft_cal "$@" ;;
