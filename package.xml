@@ -23,4 +23,8 @@
 	<exec_depend>bhand_mux</exec_depend>
 	<exec_depend>joy</exec_depend>
 	<exec_depend>joy_teleop</exec_depend>
+
+	<!-- robotiq_teleop and launch/robotiq_nav_controller.launch (the Robotiq
+	     gripper): its services; libgripper itself is no catkin package -->
+	<depend>std_srvs</depend>
 </package>

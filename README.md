@@ -737,3 +737,173 @@ whenever the spread moves, each pose holds against a push), a blocked finger
 and a silent puck; `hand_chain_tests` checks the joystick chain end to end,
 L2 + cross included (start `roscore` and the launch file with
 `joy_dev:=/dev/no_joystick` first). Neither needs a robot.
+
+### Robotiq 2F gripper (Sony navigation controller)
+
+A Robotiq 2F-140 on the follower is worked from the same navigation controller
+as the BarrettHand, by a node of its own: `robotiq_teleop` owns the gripper's
+serial port (Modbus RTU, through libgripper's
+`gripper::robotiq::RobotiqGripper`) and reads the controller; the arm programs
+know nothing of it. `launch/robotiq_nav_controller.launch` starts `joy_node`
+(as for the hand) and the node. With `GRIPPER=robotiq` in `wam_settings.sh`,
+`wam teleop` starts it in a `gripper` pane. It is the hand or the gripper:
+with `HAND_CONTROLLER=yes` as well, `wam teleop` says so and starts nothing.
+
+| Controller | The gripper |
+|---|---|
+| L2 + stick up / down | closes / opens, at a speed proportional to the stick, 50 mm/s at full stick; with L2 let go or the stick centred the opening stays |
+| L2 + cross | opens fully: one press, one action; stick up on the way turns it round |
+| L2 + circle, held 1 s | restarts the gripper (below); a shorter press does nothing |
+| off, or out of range | 0.5 s after the last message the gripper stops where it is; a grip stays |
+
+The gripper takes positions, not velocities: a request holds the opening to go
+to and the speed and force to use on the way. So the stick moves a target
+opening, and every change of it by one of the gripper's 255 position counts
+(0.55 mm) goes out as a request, always with `device_speed` and `force`
+(0.3 and 0.5, libgripper's defaults: about 95 mm/s and 70 N on a 2F-140, whose
+ranges are 30-250 mm/s and 10-125 N). The gripper's own speed has to stay
+above `stick_speed` for the opening to follow the stick; the node says so at
+its start if it does not.
+
+While the stick moves the target it never gets more than `lead` (5 mm) ahead
+of the measured opening. Closed on an object, or on the fingers' own stop,
+the request therefore stays up to 5 mm beyond the contact: the gripper keeps
+its force on the object, follows it by at most those 5 mm if it gives way
+(the gripper's re-grasp), and opens within a step or two when the stick goes
+down, however long it was held up. This goes by the measured opening, not by
+the gripper's object flag, which its manual says can miss a grasp. The
+millimetres are libgripper's straight line from count 0 (140 mm) to count 255
+(0 mm); the real fingers stop a few counts inside both ends (the manual's
+example reads 13 at fully open), so they are nominal.
+
+Settings: `GRIPPER`, `GRIPPER_PORT` (the serial device as the container sees
+it) and `GRIPPER_ARGS` (more arguments for the launch file) in
+`wam_settings.sh`; speeds, force, lead, buttons, the Modbus address in
+`config/robotiq_nav_controller.yaml`; `auto_activate` and `auto_restart` as
+launch arguments (`GRIPPER_ARGS="auto_restart:=true"`).
+
+**What the pane prints.** One line per event, with the time, also kept in
+`pane_logs/<start>_gripper.log` (these are from the simulated gripper):
+
+```
+14:19:00 Gripper: Robotiq 2F on /dev/ttyUSB0 (115200 baud, slave 9). L2 + stick up/down: close/open, at up to 50 mm/s. L2 + X: open fully. L2 + circle held 1 s: restart. Each request: speed 0.30, force 0.50.
+14:19:00 Gripper: the serial port is open; waiting for the gripper to answer.
+14:19:00 Gripper: the gripper is not activated yet (as after it was powered on). A restart activates it: L2 + circle held 1 s, or `wam gripper restart`, once its fingers have room. They run through their travel: whatever they hold falls. (activated NO, ready NO, gOBJ 0, fault 0x00, request echo 0, position 13 (132.9 mm), motor current 0 mA)
+14:19:05 Gripper: RESTART (L2 + circle held 1 s): closing and opening the serial port, then reset and activation. The fingers run through their travel: whatever they hold falls.
+14:19:07 Gripper: restarted in 1.8 s: ready at 132.9 mm.
+14:19:08 Gripper: closing stopped by contact at 59.8 mm: holding.
+14:19:35 Gripper: serial: [Serial] Write error: Input/output error
+14:19:36 Gripper: the gripper is NOT ANSWERING: no status for 0.5 s. Nothing is sent to it; the serial port is closed and opened again every 1 s. Its last status: activated yes, ready yes, gOBJ 3, fault 0x00, request echo 104, position 104 (82.9 mm), motor current 0 mA.
+14:19:40 Gripper: the gripper answers again and is still activated: ready at 82.9 mm. No restart, nothing moved.
+14:23:26 Gripper: the gripper reports fault 0x0E, overcurrent triggered. Nothing is sent to it until it is restarted: L2 + circle held 1 s, or `wam gripper restart`. A restart runs the fingers through their travel: whatever they hold falls. (activated yes, ready yes, gOBJ 0, fault 0x0E, request echo 56, position 56 (109.3 mm), motor current 320 mA)
+```
+
+The `serial:` lines are libgripper's own error messages, each different one
+at once and repeats as a count every 10 s. Every line about a fault or a
+silence carries the gripper's status as it was last read. A gripper that
+looks healthy and does not do as asked is reported too (a request its echo
+does not show after 1 s; "in motion" for 2 s without moving).
+
+**Restarting it.** Three ways, all the same restart: L2 + circle held for a
+second; `wam gripper restart` from any terminal; or
+`rosservice call /robotiq_teleop/restart` (it answers when the restart is
+over, with the pane's line about it). The node closes the serial port, opens
+it, resets the gripper (which clears its faults), activates it, waits until
+it is ready and at rest (10 s at most), and takes the opening it then reads
+as the target. **The activation runs the fingers through their travel, and
+libgripper then sends them fully open: whatever the gripper holds falls.**
+That is why a restart waits to be asked for. The arm programs are not
+involved and keep running.
+
+Not everything needs one:
+
+| The gripper | The node |
+|---|---|
+| does not answer for 0.5 s (adapter unplugged, cable, power) | sends nothing, closes and opens the port every second, says whether the port opens. When the gripper answers and is still activated, the teleop goes on from the opening it reads: no restart, nothing moves, a grip is kept |
+| answers, but not activated (it lost its power) | waits for a restart |
+| fault 0x07 (activation bit must be set), 0x0A (under minimum voltage), 0x0B / 0x0F (automatic release in progress / completed), 0x0C (internal fault), 0x0D (activation fault), 0x0E (overcurrent) | prints the code and the manual's words for it, waits for a restart; these need the reset |
+| fault 0x05 (action delayed: activation must be completed), 0x08 (over 85 C inside), 0x09 (no communication for 1 s) | prints it and waits for it to clear, which the manual says needs no reset; suggests a restart if it has not after 5 s |
+| answers out of step (one answer came after libgripper's 0.2 s time-out and stays on the line, so that every later request is paired with the answer before it) | after three position requests without a proper answer it closes and opens the port, which empties the line; no restart |
+
+At its start the node takes a gripper that is already activated and ready as
+it is, so a node that died and was started again by roslaunch does not drop
+what is held. One that is not activated, as after it was powered on, waits
+for a restart like any other: nothing moves until it is asked for, with the
+arm where the fingers have room (as the follower asks before it initializes
+the BarrettHand). `auto_activate:=true` activates it at the start without
+asking. `auto_restart:=true` restarts without asking whenever a restart is
+needed, at most every 10 s; the gripper then lets go by itself.
+
+`wam gripper restart` asks the node. If the node does not answer within 30 s
+(hung in the serial library), it stops the node; roslaunch starts a new one
+within a second, and the restart goes through that. A node that finds its own
+loop stuck for 8 s when a restart is asked for ends itself for the same
+purpose. If the launch file itself has ended, it is started again in the
+gripper pane. `wam gripper status` prints whether the serial device is there
+and the node's state in one line (also
+`rosservice call /robotiq_teleop/status`). `wam stop` ends the gripper pane
+with the rest; the node sends the gripper nothing at the end, so it stays as
+it is, holding what it holds (the fingers are self-locking).
+
+`/robotiq_teleop/joint_states` (`sensor_msgs/JointState`, joint
+`finger_joint`) has the opening in m and the motor current in A as the
+effort, while the gripper answers; `RECORD=bag` records it.
+
+**On the robot computer, before the first use.**
+
+1. The gripper powered (24 V) and its RS-485 adapter plugged into the robot
+   computer. `ls -l /dev/serial/by-id/` names the adapter; that name stays
+   the same when it is plugged in again, which `/dev/ttyUSB0` does not (it
+   can come back as `ttyUSB1`, and the node would wait for a device that is
+   gone). Put it in `GRIPPER_PORT`.
+2. The container has to see it: `docker exec <container> ls -l <that name>`.
+   The lab's `docker-compose.yml` runs the container privileged with `/dev`
+   bound, and then it does, also after a re-plug; a container made otherwise
+   has to be made again with the device.
+3. libgripper's branch `robotiq` at 2ddb4c7 ("tested and working",
+   2026-11-11: the register packing that was tried on the gripper), in the
+   workspace's `libgripper` checkout: `git fetch && git checkout robotiq`.
+   Then, in the container, the workspace's `build_gripper.sh` (cmake, make,
+   `sudo make install` to `/usr/local`, and the links of `gripper_ros` and
+   `gripper_ros_common` into `wam_ws/src`) and `build_ws.sh` (`catkin_make`).
+   CMake prints `robotiq_teleop: built (libgripper with the Robotiq
+   classes)`; with an older libgripper it says why not and builds everything
+   else as before. That branch left `main` in August 2025 and has none of
+   main's later work (the gecko gripper, the BarrettHand changes of 2026):
+   installing it replaces those in `/usr/local` and in `gripper_ros`. This
+   package only uses `gripper_ros_common` of it (the follower's `--hand`
+   messages), which is the same on both branches.
+4. `GRIPPER=robotiq` and `HAND_CONTROLLER=no` in `wam_settings.sh`; then
+   `wam teleop`. Without the arms: `roslaunch wam_teleop
+   robotiq_nav_controller.launch port:=<that name>`. The pane says that the
+   gripper is not activated yet; with the fingers clear, hold L2 + circle
+   for a second (or `wam gripper restart`).
+5. Do not run `gripper_ros`'s `robotiq_node` on the same port at the same
+   time: two programs asking on one serial line get each other's answers.
+
+**Not tried on the gripper.** Everything above ran against a simulated
+gripper only (`test/robotiq_sim.py`, whose frames match the manual's Modbus
+example byte for byte). Open on the real one: what "bugs out" is (the pane's
+log of the first time will say); whether a new request in mid-move takes
+effect at once, as the stick needs; how small a change of the request it
+acts on; where and how it reports contact, and what `force` 0.5 does to what
+it holds; that activation ends with the fingers open, and how long it takes
+(the node waits 10 s); whether fault 0x09 appears on this serial line and
+clears by itself; whether answers ever do get out of step on the real
+adapter, and that closing its port clears them; the rate of the exchanges
+through the adapter (with an FTDI adapter's default latency timer, 16 ms
+each, the loop runs at about 30 Hz instead of 40; the stick's speed does not
+depend on it).
+
+`robotiq_teleop_tests` runs the logic (`src/lib/robotiq_teleop_core.h`) in
+simulated time against a made-up gripper; no library, no ROS. With a
+workspace built for the gripper, `test/robotiq_e2e.sh` runs the real node and
+launch file against `test/robotiq_sim.py` on a pseudo-terminal (activation,
+the stick, an object, restarts, faults, the serial device going away and
+coming back, the node killed), and `test/robotiq_wam_check.sh` the launcher's
+part with stand-ins for Docker and the arm programs.
+`test/robotiq_docker.sh <libgripper clone>` does all of it in Docker, with no
+libgripper, with its `main` and with its `robotiq` installed.
+`python3 test/robotiq_sim.py --link /tmp/robotiq_sim` alone is a gripper to
+try the pane against (`port:=/tmp/robotiq_sim`; `help` lists what can be done
+to it).

@@ -1,0 +1,50 @@
+<launch>
+	<!-- Sony navigation controller -> Robotiq 2F gripper (2F-140) on its
+	     serial adapter. joy_node reads the controller as for the BarrettHand
+	     (hand_nav_controller.launch, same settings); robotiq_teleop
+	     (src/robotiq_teleop.cpp) owns the gripper. Hold L2 (the deadman) and
+	     move the stick up/down to close/open; letting go holds the opening.
+	     L2 + cross opens fully. L2 + circle held for a second restarts the
+	     gripper (so does `wam gripper restart`, or
+	     rosservice call /robotiq_teleop/restart): its fingers then run through
+	     their travel, and whatever they hold falls.
+	     /dev/nav_controller is the udev link of 99-nav_controller.rules.
+	     Speeds, force and button numbers: config/robotiq_nav_controller.yaml.
+	     Not together with hand_nav_controller.launch: both read the same
+	     controller under the same node name. -->
+	<arg name="joy_dev" default="/dev/nav_controller"/>
+	<!-- the gripper's serial device; a /dev/serial/by-id/ name stays the same
+	     when the adapter is plugged in again -->
+	<arg name="port" default="/dev/ttyUSB0"/>
+	<!-- A gripper that is not activated when the node starts (as after it was
+	     powered on) waits for a restart: L2 + circle held, or
+	     `wam gripper restart`, once its fingers have room. true: activate it
+	     at the start without asking. One that is already activated is left as
+	     it is either way. -->
+	<arg name="auto_activate" default="false"/>
+	<!-- restart without asking whenever the gripper reports a fault that
+	     needs a reset: it drops what it holds, by itself -->
+	<arg name="auto_restart" default="false"/>
+
+	<group ns="nav_controller_teleop">
+		<!-- respawn: a crashed controller node comes back by itself -->
+		<node pkg="joy" type="joy_node" name="joy_node" respawn="true" respawn_delay="1">
+			<param name="dev" value="$(arg joy_dev)"/>
+			<param name="deadzone" value="0.05"/>
+			<!-- republish while the stick is held still; without it the
+			     gripper would take a held stick for a silent controller
+			     after 0.5 s and stop -->
+			<param name="autorepeat_rate" value="50"/>
+		</node>
+	</group>
+
+	<!-- respawn: a node that died finds the gripper still activated and goes
+	     on from its opening, without activating it again -->
+	<node pkg="wam_teleop" type="robotiq_teleop" name="robotiq_teleop" output="screen" respawn="true" respawn_delay="1">
+		<remap from="joy" to="/nav_controller_teleop/joy"/>
+		<rosparam file="$(find wam_teleop)/config/robotiq_nav_controller.yaml" command="load"/>
+		<param name="port" value="$(arg port)"/>
+		<param name="auto_activate" value="$(arg auto_activate)"/>
+		<param name="auto_restart" value="$(arg auto_restart)"/>
+	</node>
+</launch>

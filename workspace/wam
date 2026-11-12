@@ -3,7 +3,7 @@
 # and the haptic saber, in one tmux session ("wam") that works on thor's
 # screen or over SSH. Settings: wam_settings.sh, next to this script.
 #
-#   wam teleop   wam8g leader + P2 follower (+ hand controller, + a recording)
+#   wam teleop   wam8g leader + P2 follower (+ hand controller or gripper, + a recording)
 #   wam saber    the haptic saber on the wam8g
 #   wam stop     ends whichever runs; Shift-Idle the arms when it asks
 #                (Ctrl-C while it waits, or wam stop --force: kill what is left)
@@ -23,6 +23,12 @@
 #   wam ft-zero  take the force/torque sensor's zero again mid-teleop, against
 #                its drift ('z' in the follower's pane too): nothing may touch
 #                the gripper for the second it takes
+#   wam gripper restart  restart the Robotiq gripper mid-teleop, from any
+#                terminal (GRIPPER=robotiq; L2 + circle held 1 s does the
+#                same): its serial port is closed and opened, the gripper reset
+#                and activated. Its fingers run through their travel, so
+#                whatever they hold falls. The arms' programs are not touched.
+#   wam gripper status   the gripper's state in one line
 #   wam cal zero     the follower's zero calibration (Barrett's bt-wam-zerocal)
 #   wam cal gravity  the follower's gravity calibration (bt-wam-gravitycal)
 #   wam cal excite NAME  one excitation run of the follower for the dynamics
@@ -63,6 +69,11 @@ FOLLOWER_EXTRA=${FOLLOWER_EXTRA:-}
 FT_TOOL=${FT_TOOL:-wam_ws/src/wam_teleop/config/follower-zeus-hand/ft_tool.conf}   # in the repository
 FT_ORIGIN_Z=${FT_ORIGIN_Z:-}
 CAN_TXQUEUELEN=${CAN_TXQUEUELEN:-100}   # frames; see check_can (2026-11-10)
+# The Robotiq 2F gripper (2026-11-11): off unless wam_settings.sh says GRIPPER=robotiq.
+GRIPPER=${GRIPPER:-no}                        # no | robotiq
+GRIPPER_PORT=${GRIPPER_PORT:-/dev/ttyUSB0}    # its serial device, as the container sees it
+GRIPPER_ARGS=${GRIPPER_ARGS:-}                # more arguments for launch/robotiq_nav_controller.launch
+[ "$GRIPPER" = robotiq ] && TOPICS="$TOPICS /robotiq_teleop/joint_states"
 
 # Programs, as `pgrep -f` patterns inside the container.
 P_LEADER="^$BIN/leader_wam8g"
@@ -70,6 +81,8 @@ P_FOLLOWER="^$BIN/follower( |$)"
 P_SABER="^$IN/demos/haptic_saber/build-"
 P_ROSCORE="/rosmaster --core"
 P_HAND="roslaunch wam_teleop hand_nav_controller.launch"
+P_GRIPPER="roslaunch wam_teleop robotiq_nav_controller.launch"
+P_GRIPPER_NODE="^$BIN/robotiq_teleop( |$)"
 P_BAG="/rosbag/record|/rosbag record"
 P_OTHER_ARM="wam8g_j6_friction|dynamics_excitation|bt-wam-"   # anything else on the arms
 
@@ -106,6 +119,19 @@ arm_options() {
 	echo "$out"
 }
 
+# One call of the gripper node's restart or status service (std_srvs/Trigger),
+# at most $2 seconds; "wait" as $3 waits for the service to appear first.
+# Prints the node's answer. 0: it reports success; 1: it does not; 2: the node
+# did not answer at all.
+gripper_call() {
+	local out
+	out=$(timeout "$2" rosservice call ${3:+--wait} "/robotiq_teleop/$1" 2>/dev/null) || return 2
+	python3 -c 'import sys, yaml
+answer = yaml.safe_load(sys.stdin)
+print("Gripper: " + answer["message"])
+sys.exit(0 if answer["success"] else 1)' <<<"$out"
+}
+
 container_run() {
 	set +u   # ROS's setup scripts read unset variables
 	# shellcheck disable=SC1091
@@ -115,6 +141,44 @@ container_run() {
 	case "$1" in
 	roscore) exec roscore ;;
 	hand) wait_master && exec roslaunch wam_teleop hand_nav_controller.launch ;;
+	gripper)
+		wait_master || exit 1
+		# shellcheck disable=SC2086
+		exec roslaunch wam_teleop robotiq_nav_controller.launch port:="$GRIPPER_PORT" $GRIPPER_ARGS ;;
+	gripper-status)
+		gripper_call status 5
+		[ $? -ne 2 ] || { echo "The gripper node does not answer."; exit 2; }
+		exit 0 ;;
+	gripper-restart)
+		# Through the node, which owns the serial port. A node that does not answer
+		# (stuck in the serial library, or gone) is stopped; its launch file starts it
+		# again within a second (respawn), and the restart then goes through the new one.
+		gripper_call restart 30
+		case $? in
+		0) exit 0 ;;
+		1) exit 1 ;;
+		esac
+		echo "The gripper node does not answer: stopping it, so that its launch file starts a new one."
+		pkill -INT -f "$P_GRIPPER_NODE" 2>/dev/null
+		for _ in $(seq 10); do
+			pgrep -f "$P_GRIPPER_NODE" >/dev/null || break
+			sleep 0.3
+		done
+		pgrep -f "$P_GRIPPER_NODE" >/dev/null && pkill -KILL -f "$P_GRIPPER_NODE"
+		gripper_call restart 60 wait
+		case $? in
+		0) exit 0 ;;
+		1) exit 1 ;;
+		esac
+		echo "The new gripper node does not answer either: look at its pane (wam attach)."
+		exit 2 ;;
+	gripper-restart-new)
+		# The launch file was only just started: wait for its node.
+		local rc
+		gripper_call restart 60 wait
+		rc=$?
+		[ $rc -ne 2 ] || echo "The gripper node does not answer: look at its pane (wam attach)."
+		exit $rc ;;
 	leader)
 		wait_master || exit 1
 		export BARRETT_CONFIG_FILE=$LEADER_CONF
@@ -231,17 +295,18 @@ inside_session() {
 
 teleop_running() { running "$P_LEADER" || running "$P_FOLLOWER"; }
 
-# The ROS side (bag, hand controller, roscore): Ctrl-C in each pane, as by
+# The ROS side (bag, hand controller, gripper, roscore): Ctrl-C in each pane, as by
 # hand, which closes the bag properly; then, for anything left (closing a pane
 # does not stop a program started with docker exec), SIGINT and SIGTERM in the
 # container.
 stop_ros() {
 	container_up || return 0
 	local name p pane
-	for name in bag hand roscore; do
+	for name in bag hand gripper roscore; do
 		case $name in
 		bag) p=$P_BAG ;;
 		hand) p=$P_HAND ;;
+		gripper) p=$P_GRIPPER ;;   # its node sends the gripper nothing at the end: it stays as it is
 		roscore) p=$P_ROSCORE ;;
 		esac
 		running "$p" || continue
@@ -372,16 +437,37 @@ attach() {
 }
 
 start_teleop() {
+	case "$GRIPPER" in
+	no|robotiq) ;;
+	*)
+		echo "GRIPPER=$GRIPPER in wam_settings.sh: it is no (none) or robotiq. Nothing was started."
+		exit 1 ;;
+	esac
+	if [ "$GRIPPER" = robotiq ] && [ "$HAND_CONTROLLER" = yes ]; then
+		echo "wam_settings.sh has both HAND_CONTROLLER=yes (the BarrettHand) and GRIPPER=robotiq (the Robotiq gripper)."
+		echo "Both are worked from the one navigation controller, with the same buttons: set HAND_CONTROLLER=no for"
+		echo "the Robotiq gripper, or GRIPPER=no for the BarrettHand. Nothing was started."
+		exit 1
+	fi
 	preflight teleop
-	[ -e /dev/nav_controller ] || [ "$HAND_CONTROLLER" != yes ] ||
-		echo "Note: the navigation controller is off or unplugged (the hand waits for it)."
+	if [ ! -e /dev/nav_controller ]; then
+		[ "$HAND_CONTROLLER" != yes ] || echo "Note: the navigation controller is off or unplugged (the hand waits for it)."
+		[ "$GRIPPER" != robotiq ] || echo "Note: the navigation controller is off or unplugged (the gripper holds until it is on)."
+	fi
+	if [ "$GRIPPER" = robotiq ] && ! docker exec "$CONTAINER" test -e "$GRIPPER_PORT"; then
+		echo "Note: the gripper's serial device $GRIPPER_PORT is not there in the container (GRIPPER_PORT in"
+		echo "wam_settings.sh; ls -l /dev/serial/by-id/ lists the adapters). The gripper pane keeps trying to open it."
+	fi
 	local run="docker exec -it $CONTAINER $IN/wam _run"
-	local leader follower ros hand bag
+	local leader follower ros hand gripper bag
 	leader=$(new_pane leader "")
 	follower=$(new_pane follower "" -h -t "$leader")
 	ros=$(new_pane roscore "$run roscore" -v -l 25% -t "$leader")
 	if [ "$HAND_CONTROLLER" = yes ]; then
 		hand=$(new_pane hand "$run hand" -h -t "$ros")
+	fi
+	if [ "$GRIPPER" = robotiq ]; then
+		gripper=$(new_pane gripper "$run gripper" -h -t "$ros")
 	fi
 	if [ "$RECORD" = bag ] || [ "$RECORD" = both ]; then
 		bag=$(new_pane bag "$run bag" -v -l 25% -t "$follower")
@@ -464,9 +550,9 @@ stop_all() {
 	local left
 	if ! session; then
 		left=$(arm_programs_left)
-		if [ -n "$left" ] || running "$P_ROSCORE" || running "$P_HAND" || running "$P_BAG" || saber_launcher; then
+		if [ -n "$left" ] || running "$P_ROSCORE" || running "$P_HAND" || running "$P_GRIPPER" || running "$P_BAG" || saber_launcher; then
 			echo "No wam session, but these still run in the container (closing a pane does not end them):"
-			container_up && docker exec "$CONTAINER" pgrep -af "$P_LEADER|$P_FOLLOWER|$P_SABER|$P_ROSCORE|$P_HAND|$P_BAG"
+			container_up && docker exec "$CONTAINER" pgrep -af "$P_LEADER|$P_FOLLOWER|$P_SABER|$P_ROSCORE|$P_HAND|$P_GRIPPER|$P_BAG"
 			saber_launcher && pgrep -af "run_demo.py saber"
 			if [ -n "$left" ]; then
 				[ "$force" = --force ] || force_ok "$left" || return 1
@@ -603,6 +689,52 @@ ft_zero() {
 	esac
 }
 
+# The Robotiq gripper mid-teleop, from any terminal: restart | status. Both go
+# through the gripper node's services; neither touches the arms' programs.
+gripper_cmd() {
+	local what=${1:-} pane
+	case "$what" in
+	restart|status) ;;
+	*) echo "wam gripper restart | status"; return 1 ;;
+	esac
+	if [ "$GRIPPER" != robotiq ]; then
+		echo "No gripper is set up: GRIPPER=robotiq in wam_settings.sh starts the Robotiq gripper with wam teleop."
+		return 1
+	fi
+	if ! container_up; then
+		echo "The $CONTAINER container is not running: nothing runs the gripper."
+		return 1
+	fi
+	if [ "$what" = status ]; then
+		docker exec "$CONTAINER" test -e "$GRIPPER_PORT" && echo "Serial device $GRIPPER_PORT: there" ||
+			echo "Serial device $GRIPPER_PORT: NOT THERE in the container (GRIPPER_PORT in wam_settings.sh)"
+		if ! running "$P_GRIPPER"; then
+			echo "The gripper's launch file is not running (wam teleop starts it in the gripper pane)."
+			return 1
+		fi
+		running "$P_GRIPPER_NODE" || echo "The gripper node is not running at the moment (its launch file starts it again within a second)."
+		docker exec "$CONTAINER" "$IN/wam" _run gripper-status
+		return
+	fi
+	if ! running "$P_GRIPPER"; then
+		# The launch file ended (Ctrl-C in its pane, a crash of roslaunch): start it there again.
+		pane=$(pane_named gripper)
+		if [ -z "$pane" ] || ! running "$P_ROSCORE"; then
+			echo "The gripper's programs are not running, and there is no teleop session to start them in: wam teleop."
+			return 1
+		fi
+		echo "The gripper's launch file is not running: starting it again in its pane."
+		# A pane scrolled with the mouse is in tmux's copy mode, which would take the keys itself.
+		[ "$(tmux display -p -t "$pane" '#{pane_in_mode}')" = 1 ] && tmux send-keys -t "$pane" -X cancel
+		tmux send-keys -t "$pane" "docker exec -it $CONTAINER $IN/wam _run gripper" Enter
+		echo "Restarting the gripper: its fingers run through their travel, and whatever they hold falls."
+		docker exec "$CONTAINER" "$IN/wam" _run gripper-restart-new
+		return
+	fi
+	echo "Restarting the gripper: its fingers run through their travel, and whatever they hold falls."
+	docker exec "$CONTAINER" "$IN/wam" _run gripper-restart
+}
+
 # The navigation controller's buttons as they are pressed (the numbers are
 # joy_node's, as in config/hand_nav_controller.yaml).
 joytest() {
@@ -612,10 +744,15 @@ joytest() {
 		return 1
 	fi
 	echo "Press the navigation controller's buttons (Ctrl-C ends)."
-	echo "L2 + stick: the grasp. L2 + X: the hand's next spread pose."
-	python3 - "$dev" <<'PY'
+	if [ "$GRIPPER" = robotiq ]; then
+		echo "L2 + stick: close/open the gripper. L2 + X: open it fully. L2 + Circle held 1 s: restart it."
+	else
+		echo "L2 + stick: the grasp. L2 + X: the hand's next spread pose."
+	fi
+	python3 - "$dev" "$GRIPPER" <<'PY'
 import struct, sys
 NAMES = ["X", "Circle", "Triangle", "Square", "L1", "L2", "PS", "L3", "Up", "Down", "Left", "Right"]
+ROBOTIQ = sys.argv[2] == "robotiq"
 def name(b):
     return "%s (%d)" % (NAMES[b] if b < len(NAMES) else "button", b)
 down = set()
@@ -634,9 +771,11 @@ try:
             held = " + ".join(name(b) for b in sorted(down, key=lambda b: (b != 5, b))) or "-"
             note = ""
             if value and down == {0, 5}:
-                note = "   <- the hand's next spread pose"
+                note = "   <- the gripper opens fully" if ROBOTIQ else "   <- the hand's next spread pose"
+            elif value and down == {1, 5} and ROBOTIQ:
+                note = "   <- held for 1 s: the gripper restarts"
             elif value and number == 0 and 5 not in down:
-                note = "   (hold L2 too for the next spread pose)"
+                note = "   (hold L2 too to open the gripper fully)" if ROBOTIQ else "   (hold L2 too for the next spread pose)"
             print("%-8s %-11s held: %s%s" % ("pressed" if value else "released", name(number), held, note), flush=True)
 except KeyboardInterrupt:
     pass
@@ -659,12 +798,17 @@ status() {
 		fi
 	done
 	[ -e /dev/nav_controller ] && echo "Navigation controller: connected" || echo "Navigation controller: not connected"
+	if [ "$GRIPPER" = robotiq ]; then
+		container_up && docker exec "$CONTAINER" test -e "$GRIPPER_PORT" && echo "Gripper (Robotiq) serial device $GRIPPER_PORT: there" ||
+			echo "Gripper (Robotiq) serial device $GRIPPER_PORT: not there in the container"
+	fi
 	session && echo "Session: wam ($(tmux list-windows -t "$SESSION" -F '#W' | tr '\n' ' '))" || echo "Session: none"
 	local p
 	for p in "leader:$P_LEADER" "follower:$P_FOLLOWER" "saber:$P_SABER" "roscore:$P_ROSCORE" \
-			"hand controller:$P_HAND" "bag:$P_BAG" "other arm program:$P_OTHER_ARM"; do
+			"hand controller:$P_HAND" "gripper:$P_GRIPPER" "bag:$P_BAG" "other arm program:$P_OTHER_ARM"; do
 		running "${p#*:}" && echo "Running: ${p%%:*}"
 	done
+	running "$P_GRIPPER" && echo "  (wam gripper status: the gripper's own state)"
 	saber_launcher && echo "Running: saber viewer"
 	return 0
 }
@@ -768,6 +912,7 @@ teleop) start_teleop ;;
 log) shift; show_log "$@" ;;
 ft-cal) shift; ft_cal "$@" ;;
 ft-zero) ft_zero ;;
+gripper) shift; gripper_cmd "$@" ;;
 saber) start_saber ;;
 stop) stop_all "${2:-}" ;;
 status) status ;;

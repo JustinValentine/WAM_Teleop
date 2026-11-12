@@ -6,8 +6,8 @@ computer (`<workspace>` below is that checkout, e.g. `wam-ros-docker`):
 
 | Here | Goes to | What it is |
 |---|---|---|
-| `wam` | `<workspace>/wam` | launcher: starts the leader, the follower and roscore in tmux panes, checks the CAN interfaces, summarises recordings (`wam teleop`, `wam status`, `wam log`) |
-| `wam_settings.sh` | `<workspace>/wam_settings.sh` | the launcher's settings: both arms' options, CAN interfaces, CPUs, recording |
+| `wam` | `<workspace>/wam` | launcher: starts the leader, the follower and roscore in tmux panes (and the hand controller's or the Robotiq gripper's), checks the CAN interfaces, summarises recordings, restarts the gripper (`wam teleop`, `wam status`, `wam log`, `wam gripper restart`) |
+| `wam_settings.sh` | `<workspace>/wam_settings.sh` | the launcher's settings: both arms' options, CAN interfaces, CPUs, recording, the gripper (`GRIPPER`, off by default) |
 | `config/wam8g/` | `<workspace>/config/wam8g/` | the leader's libbarrett configuration and calibration (wam8g: WAM 153 base with the Alberta wrist, as of 2026-11-11) |
 | `tools/dyn_feel/` | `<workspace>/tools/dyn_feel/` | `wam8g_dyn_feel`: float the leader and switch an identified J1-J4 model's terms on by key, to feel a fit before it goes into the teleop |
 | `tools/gravtool/` | `<workspace>/tools/gravtool/` | evaluates the library's gravity model at given joint positions, without the robot |

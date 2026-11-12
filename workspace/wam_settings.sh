@@ -19,6 +19,21 @@ FOLLOWER_ARGS="--sync wam8g --law u4 --force-gain 0.4 --force-notch 35"
 FOLLOWER_CONF=/home/user/wam_ros/wam_ws/src/wam_teleop/config/follower-slax-skid-ft/follower.conf
 HAND_CONTROLLER=no    # the Sony navigation controller -> hand chain (yes on thor; no hand on slax)
 SPREAD_POSES=yes      # L2 + X steps the spread 0/50/100%; no: the grasp only, spread at 0%
+# Robotiq 2F gripper from the same navigation controller (wam_teleop/README.md, "Robotiq 2F
+# gripper"). robotiq: `wam teleop` starts a gripper pane; L2 + stick up/down closes/opens,
+# L2 + X opens fully, L2 + circle held 1 s restarts the gripper, as does `wam gripper restart`
+# from any terminal (also its first activation after it was powered on); `wam gripper status`
+# shows its state. no: nothing changes.
+# Not together with HAND_CONTROLLER=yes: there is one controller.
+GRIPPER=no
+# The gripper's serial adapter, as the container sees it. A name under /dev/serial/by-id/ stays
+# the same when the adapter is plugged in again; /dev/ttyUSB0 can come back as /dev/ttyUSB1.
+GRIPPER_PORT=/dev/ttyUSB0
+# More arguments for launch/robotiq_nav_controller.launch. "auto_activate:=true": activate the
+# gripper when the pane starts, without waiting for L2 + circle (its fingers move, with the arm
+# wherever it is then). "auto_restart:=true": restart without asking whenever the gripper reports
+# a fault that needs it (it then drops what it holds by itself).
+GRIPPER_ARGS=""
 # Recording, in teleop_logs/ (2026-11-09):
 #   native  each arm program writes teleop_<time>_<arm>.tlog itself, one row per
 #           control cycle, from its control loop: no ROS in the data path, and the

@@ -190,3 +190,44 @@ if(gripper_ros_common_FOUND)
    target_include_directories(hand_chain_tests PRIVATE src/lib ${gripper_ros_common_INCLUDE_DIRS})
    add_dependencies(hand_chain_tests ${gripper_ros_common_EXPORTED_TARGETS})
 endif()
+
+## The Robotiq 2F gripper from the navigation controller
+## (launch/robotiq_nav_controller.launch). lib/robotiq_teleop_core.h decides
+## what to ask of the gripper; its checks need no gripper, no library and no
+## ROS, and are always built.
+add_executable(robotiq_teleop_tests test/test_robotiq_teleop.cpp)
+target_include_directories(robotiq_teleop_tests PRIVATE src/lib)
+
+## robotiq_teleop, the node around the core, owns the gripper through
+## libgripper's gripper::robotiq::RobotiqGripper, which only its branch
+## "robotiq" has (github dmiller12/libgripper, 2ddb4c7). With an older
+## libgripper installed, or none, the node is left out and everything else is
+## built as before. The check is made again at every configure, so that a
+## newer library is found without clearing the build folder.
+find_package(gripper QUIET)
+find_package(std_srvs QUIET)
+unset(GRIPPER_HAS_ROBOTIQ CACHE)
+if(gripper_FOUND AND std_srvs_FOUND)
+   include(CheckCXXSourceCompiles)
+   set(CMAKE_REQUIRED_LIBRARIES gripper::gripper)
+   set(CMAKE_REQUIRED_QUIET TRUE)
+   check_cxx_source_compiles("
+      #include <gripper/robotiq/robotiq_gripper.h>
+      int main() { gripper::robotiq::RobotiqGripper g; return g.isConnected() ? 1 : 0; }"
+      GRIPPER_HAS_ROBOTIQ)
+   unset(CMAKE_REQUIRED_LIBRARIES)
+   unset(CMAKE_REQUIRED_QUIET)
+endif()
+if(GRIPPER_HAS_ROBOTIQ)
+   add_executable(robotiq_teleop src/robotiq_teleop.cpp)
+   target_include_directories(robotiq_teleop PRIVATE ${std_srvs_INCLUDE_DIRS})
+   target_link_libraries(robotiq_teleop ${catkin_LIBRARIES} ${std_srvs_LIBRARIES} gripper::gripper pthread)
+   add_dependencies(robotiq_teleop ${catkin_EXPORTED_TARGETS})
+   message(STATUS "robotiq_teleop: built (libgripper with the Robotiq classes)")
+elseif(NOT gripper_FOUND)
+   message(STATUS "robotiq_teleop: not built (no libgripper installed)")
+elseif(NOT std_srvs_FOUND)
+   message(STATUS "robotiq_teleop: not built (no std_srvs)")
+else()
+   message(STATUS "robotiq_teleop: not built (the installed libgripper has no gripper::robotiq::RobotiqGripper: its branch robotiq has)")
+endif()
