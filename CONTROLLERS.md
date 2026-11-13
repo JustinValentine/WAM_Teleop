@@ -115,8 +115,9 @@ model's inertial torque is limited to a few hertz.
   zero and gripper) leave 1.44 / 2.44 / 0.79 / 1.00 Nm there and are off
   by up to 1.4 Nm of gravity on J2. A cable-drive model fitted on the same
   runs (`lib/cable_params_slax_20261112.h`: 0.52 / 0.59 / 0.29 / 0.21 Nm) is
-  what `follower --model cable` loads; it has not run on the arm (the
-  follower runs the legacy model unless that option is given).
+  what `follower --model cable` loads. Since 2026-11-13 the settings on odin
+  give that option (section 7). At the time of writing it has not run on the
+  arm: every session up to 2026-11-12 ran the legacy model.
 
 The leader sends its `ext` for J1-J4 to the follower. What the follower sends
 is in the next section.
@@ -130,8 +131,10 @@ is in the next section.
     tau_ft = J_tool(q)^T W
 
 * `weight` is the gripper's, from `config/follower-slax-skid-ft/ft_tool.conf`
-  (0.957 kg, centre of mass 54 mm out; fitted by `wam ft-cal`). The zero is
-  taken at the link pose and again by `wam ft-zero`.
+  (0.957 kg, centre of mass 54 mm out in the 16:37 session; 1.183 kg and
+  57 mm since 2026-11-12, when the Robotiq gripper went on; fitted by
+  `wam ft-cal`). The zero is taken at the link pose and again by
+  `wam ft-zero`.
 * `W` is limited to 60 N and 6 N m, to 2000 N/s and 200 N m/s, and low-passed
   at 40 Hz.
 * With `--ft arm` or `--ft all`, the external torque the follower sends for
@@ -158,7 +161,14 @@ The follower itself still uses the leader's model-based `ext` in its own `u`.
   estimate of section 4 always uses the whole model; only these shares are
   fed forward, because feeding all of the friction or a filtered inertia
   forward feeds the arm's own motion back.
-* **Follower**: the legacy model's torque as in section 4.
+* **Follower**: the legacy model's torque as in section 4. With
+  `--model cable` (the settings since 2026-11-13, not run on the arm yet) it
+  is the cable model's feedforward as on the leader, with 0.4 of the friction
+  elements and a quarter of the inertial torque (`--ff-friction 0.4
+  --ff-inertia 0.25`; the key `m` in the follower's pane changes both). The
+  30-parameter model has no such friction, which is why the follower has
+  been harder to push by a link than the leader: 1.4 / 2.1 / 1.7 / 0.7 Nm of
+  cable friction on J1-J4 when a joint moves alone, by its fit.
 * **Leader's J6**: a friction feedforward `0.20 N m * tanh(dq / 0.05 rad/s)`
   for its bearing drag (`--j6-friction`).
 
@@ -172,6 +182,10 @@ The follower itself still uses the leader's model-based `ext` in its own `u`.
 and, by key during the session, the leader's friction share at 0.5 and its
 wrist force gain at 0.5. `workspace/wam_settings.sh` holds these options;
 `workspace/wam` starts both programs.
+
+Since 2026-11-13 the follower's line in the settings ends with `--model cable
+--ff-friction 0.4 --ff-inertia 0.25` (section 6). No session has run with it
+at the time of writing.
 
 ## 8. What is not in this repository
 

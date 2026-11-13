@@ -35,10 +35,12 @@ GRIPPER_PORT=/dev/serial/by-id/usb-1a86_USB_Serial-if00-port0
 # gripper when the pane starts, without waiting for L2 + circle (its fingers move, with the arm
 # wherever it is then). "auto_restart:=true": restart without asking whenever the gripper reports
 # a fault that needs it (it then drops what it holds by itself).
-# odin, 2026-11-12: the controller over Bluetooth, which gives /dev/nav_controller (the launch
-# file's default). On its USB cable the kernel names it differently and that link is missing:
-# then GRIPPER_ARGS="joy_dev:=/dev/input/by-id/usb-Sony_Navigation_Controller-joystick".
-GRIPPER_ARGS=""
+# odin, 2026-11-12: the joystick device itself. It is js0 whether the controller is on its USB
+# cable or on Bluetooth (the only joystick on this computer), and joy_node opens it again by
+# itself when the controller changes over. /dev/nav_controller (the launch file's default) only
+# exists over Bluetooth here: on the cable the kernel names the controller differently and the
+# installed udev rule does not link it.
+GRIPPER_ARGS="joy_dev:=/dev/input/js0"
 # Recording, in teleop_logs/ (2026-11-09):
 #   native  each arm program writes teleop_<time>_<arm>.tlog itself, one row per
 #           control cycle, from its control loop: no ROS in the data path, and the
@@ -89,7 +91,14 @@ LEADER_EXTRA="--model cable --ff-friction 0.2 --ki-scale 0 --reference age"
 # (--ft arm), with the gripper's weight removed by the calibration `wam ft-cal` wrote that day.
 # First session with it: 16:08 that day. Back to recording the sensor only:
 # FOLLOWER_EXTRA="--ft log --ki-scale 0".
-FOLLOWER_EXTRA="--ft all --ft-tool $FT_TOOL_IN --ki-scale 0 --reference age"
+# 2026-11-13: the follower on the cable-drive model fitted on its own excitation runs of
+# 2026-11-12 (--model cable, lib/cable_params_slax_20261112.h), feeding forward 0.4 of its cable
+# friction, so that pushing it by a link takes less force (the 30-parameter model it ran until
+# now compensates no such friction). NOT RUN ON THE ARM YET. In the follower's pane  m  then
+# 0.5 0.25  raises the share (arm at rest; not above 0.5),  m  then  0 0.25  switches it off.
+# Back to the 30-parameter model: remove the last three options (--model cable and the two
+# shares), or restore wam_settings.sh.bak-20261113-pre-follower-cable.
+FOLLOWER_EXTRA="--ft all --ft-tool $FT_TOOL_IN --ki-scale 0 --reference age --model cable --ff-friction 0.4 --ff-inertia 0.25"
 
 # Force/torque sensor on the follower, and the wrist (wam_teleop/README.md,
 # "Force/torque sensor and the wrist"). Not run on the robots yet: one step at

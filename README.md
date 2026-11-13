@@ -239,8 +239,10 @@ factor is 0.7.
 
 `leader_wam8g` and `follower` take `--model cable`: the external-torque
 estimate and the feedforward then use the cable-drive model
-(`src/lib/cable_drive_model.h`, parameters `src/lib/cable_params_wam8g.h` and
-`cable_params_zeus_hand.h`) instead of `leader_dynamics.h` /
+(`src/lib/cable_drive_model.h`; parameters `src/lib/cable_params_wam8g.h` for
+the leader and, for the follower, `cable_params_slax_20261112.h`: slax on odin,
+fitted on its excitation runs of 2026-11-12; thor's Zeus with its hand is
+`cable_params_zeus_hand.h`, one arm per build) instead of `leader_dynamics.h` /
 `follower_dynamics.h`:
 
 - the friction is a bank of Jenkins elements per motor (and on J2/J3), driven
@@ -263,6 +265,13 @@ example
 rosrun wam_teleop follower --sync wam8g --model cable 127.0.0.1 5554 5555
 rosrun wam_teleop leader_wam8g --law u4 --model cable --ff-friction 0.3 127.0.0.1 5555 5554
 ```
+
+odin, 2026-11-13: the follower's settings (`workspace/wam_settings.sh`) start
+it with `--model cable --ff-friction 0.4 --ff-inertia 0.25`, so that pushing
+it by a link takes less force; the 30-parameter model it ran until then
+compensates no cable friction. Not run on the arm at the time of writing. The
+test `cable_model_tests` checks the parameter file against the fit
+(`test/data/cable_model_slax.txt`).
 
 `dynamics_excitation_* --trajectory <file> <log>` plays a trajectory designed
 by `python -m cable_ident design` (position control, the wrist held where it

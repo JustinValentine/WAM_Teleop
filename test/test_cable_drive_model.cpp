@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "cable_drive_model.h"
+#include "cable_params_slax_20261112.h"
 #include "cable_params_wam8g.h"
 #include "cable_params_zeus_hand.h"
 
@@ -129,12 +130,16 @@ static void dissipates(const char* name, const cable_model::Params& p) {
 int main() {
 	const cable_model::Params pl = cable_params_wam8g::params();
 	const cable_model::Params pf = cable_params_zeus_hand::params();
+	const cable_model::Params ps = cable_params_slax_20261112::params();  // what follower --model cable loads
 	agreesWithPython("leader", pl);
 	agreesWithPython("follower", pf);
+	agreesWithPython("slax", ps);
 	countToggle("leader", pl);
 	countToggle("follower", pf);
+	countToggle("slax", ps);
 	dissipates("leader", pl);
 	dissipates("follower", pf);
+	dissipates("slax", ps);
 	printf(failures ? "%d FAILED\n" : "all passed\n", failures);
 	return failures ? 1 : 0;
 }
