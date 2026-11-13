@@ -50,7 +50,9 @@
 #include "lib/teleop_app.h"
 #include "lib/teleop_recorder.h"
 #include "lib/cable_drive_dynamics.h"
-#include "lib/cable_params_zeus_hand.h"
+// odin, 2026-11-12: slax's own cable model, fitted on the same excitation runs as its 30 numbers
+// above (thor's Zeus with its hand is lib/cable_params_zeus_hand.h: one arm per build).
+#include "lib/cable_params_slax_20261112.h"
 #include "lib/dynamic_external_torque.h"
 #include "lib/teleop_law.h"
 #include "lib/wam8g_teleop.h"
@@ -126,7 +128,7 @@ void printUsage(const std::string& programName, const std::string& remoteHost, i
     std::cout << "       --no-spread-poses: with --hand, the grasp only; the spread stays at 0%." << std::endl;
     std::cout << "       --model: the dynamics model of the external-torque estimate and the feedforward:" << std::endl;
     std::cout << "           legacy (lib/follower_dynamics.h, default) or cable (the cable-drive model," << std::endl;
-    std::cout << "           lib/cable_params_zeus_hand.h from ident/)." << std::endl;
+    std::cout << "           lib/cable_params_slax_20261112.h from ident/)." << std::endl;
     std::cout << "       --ff-friction, --ff-inertia: with --model cable, the feedforward's shares (0 to 1) of" << std::endl;
     std::cout << "           the cable friction (default 0) and of the inertial torque (default 0.25, as legacy);" << std::endl;
     std::cout << "           the estimate always uses all of both. 'm' changes them live." << std::endl;
@@ -526,7 +528,7 @@ template <size_t DOF> int wam_main(int argc, char **argv, ProductManager &pm, sy
             printf("follower: continuing without the wrist gravity correction.\n");
         }
         const bool useGravity = options.wristGravity && armGravity.getDof() == (int) DOF;
-        cable.reset(new CableDriveDynamics<DOF>(pm.getExecutionManager(), cable_params_zeus_hand::params(),
+        cable.reset(new CableDriveDynamics<DOF>(pm.getExecutionManager(), cable_params_slax_20261112::params(),
                                                 useGravity ? &armGravity : NULL, 4, options.ffInertia,
                                                 options.ffFriction));
         systems::connect(wam.jpOutput, cable->jpInput);
@@ -534,7 +536,7 @@ template <size_t DOF> int wam_main(int argc, char **argv, ProductManager &pm, sy
         systems::connect(jaFilter.output, cable->jaInput);
         systems::forceConnect(cable->modelOutput, dynamicExternalTorque.wamDynamicsIn);
         systems::forceConnect(cable->feedforwardOutput, follower.wamDynIn);
-        printf("Model: cable (lib/cable_params_zeus_hand.h: ZEUS'S PARAMETERS, not this arm's); feedforward shares: friction %.2f, inertia %.2f;\n"
+        printf("Model: cable (lib/cable_params_slax_20261112.h: slax, its own excitation runs of 2026-11-12); feedforward shares: friction %.2f, inertia %.2f;\n"
                "       wrist gravity correction %s.\n", options.ffFriction, options.ffInertia, useGravity ? "on" : "off");
     } else {
         printf("Model: legacy (lib/follower_beta_slax_20261112.h: slax, F/T sensor, gripper and calibration of 2026-11-12; its own excitation runs).\n");

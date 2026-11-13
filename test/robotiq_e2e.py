@@ -40,8 +40,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from robotiq_sim import SerialGripper, width_of, with_crc  # noqa: E402
 
 LINK = "/tmp/robotiq_e2e_port"
-DEADMAN, CROSS, CIRCLE = 5, 0, 1   # config/robotiq_nav_controller.yaml
-LEAD = 5.0                         # mm, the same file
+DEADMAN, CROSS, CIRCLE = 5, 0, 1   # test/robotiq_e2e.yaml, which the launch file is given below
+LEAD = 5.0                         # mm, the same file (stick 50 mm/s, device speed 0.3, force 0.5)
+CONFIG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "robotiq_e2e.yaml")
 COUNT = 140.0 / 255.0              # mm in one position count
 
 checks = failures = 0
@@ -138,7 +139,7 @@ def main():
     rospy.init_node("robotiq_e2e", disable_signals=True)
     sim = SerialGripper(LINK)
     sim.start()
-    pane = Pane(["roslaunch", "wam_teleop", "robotiq_nav_controller.launch", "port:=" + LINK, "joy_dev:=/dev/no_joystick"])
+    pane = Pane(["roslaunch", "wam_teleop", "robotiq_nav_controller.launch", "config:=" + CONFIG, "port:=" + LINK, "joy_dev:=/dev/no_joystick"])
     pad = Controller()
     opening = []
     rospy.Subscriber("/robotiq_teleop/joint_states", JointState, lambda m: opening.append(m.position[0]))

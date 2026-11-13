@@ -29,4 +29,14 @@ ARMS = {
               'teleop_20260926_181348', 'teleop_20260929_144721', 'teleop_20260929_151957',
               'teleop_20260929_160843', 'teleop_20260930_125552', 'teleop_20260930_152304'],
         header='cable_params_zeus_hand.h', namespace='cable_params_zeus_hand'),
+    # slax: the legacy WAM on odin with the Barrett F/T sensor and the gripper of 2026-11-12
+    # (zerocal 2026-11-11 19:16, gravitycal 2026-11-12 07:37; `wam cal excite` runs 1-3, wrist held at 0).
+    # SLAX_RUNS picks other runs of that day (e.g. SLAX_RUNS=1,2 to score on run 3).
+    'slax': dict(
+        robot='slax',
+        config=os.path.join(PKG, 'config', 'follower-slax-skid-ft', 'wam7w.conf'), group='wam7w', dof=7,
+        topic='/follower/joint_states',
+        excitation=[os.path.join(EXC, 'slax_20261112_%s.dat' % r) for r in os.environ.get('SLAX_RUNS', '1,2,3').split(',')],
+        bags=[],
+        header='cable_params_slax_20261112.h', namespace='cable_params_slax_20261112'),
 }

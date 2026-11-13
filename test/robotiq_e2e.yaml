@@ -1,0 +1,38 @@
+# The values test/robotiq_e2e.py checks the node against (config:= of the launch file): the
+# ones the gripper teleop was written with. config/robotiq_nav_controller.yaml is what runs on
+# the gripper and is tuned there; this file is not.
+# Sony navigation controller -> Robotiq 2F gripper (robotiq_teleop,
+# launch/robotiq_nav_controller.launch). The buttons and axes are joy_node's
+# numbers for this controller, as in hand_nav_controller.yaml: 0 cross,
+# 1 circle, 5 L2; axis 1 the stick's y, up = +1.
+#   L2 + stick up/down: close/open at up to stick_speed.
+#   L2 + cross: open fully, once per press.
+#   L2 + circle held for restart_hold: restart the gripper (port closed and
+#     opened, reset, activation: the fingers run through their travel).
+deadman_button: 5
+open_button: 0
+restart_button: 1
+axis: 1
+up_closes: true       # false: stick up opens
+restart_hold: 1.0     # s; long enough that it does not happen by accident
+
+# The stick moves a target opening; every change of it goes to the gripper as
+# a position request with the same speed and force (lib/robotiq_teleop_core.h).
+stick_speed: 50.0     # mm/s of opening at full stick
+device_speed: 0.3     # 0-1, the gripper's own speed for every request; on a
+                      # 2F-140 0 is 30 mm/s and 1 is 250 mm/s: keep it above
+                      # stick_speed, or the opening lags the stick
+force: 0.5            # 0-1, the gripper's force for every request; on a
+                      # 2F-140 0 is 10 N and 1 is 125 N
+lead: 5.0             # mm the target runs ahead of the measured opening at
+                      # most: how far beyond a contact the request stays, and
+                      # how far the fingers follow an object that gives way
+
+joy_timeout: 0.5      # s without a joystick message: hold
+rate: 40.0            # Hz, the node's loop: one status read and at most one
+                      # request per turn (the gripper takes 200 exchanges/s)
+activation_timeout: 10.0  # s a restart waits for the gripper to be ready
+
+# The gripper's Modbus settings (its defaults; Robotiq's user interface changes them).
+baud_rate: 115200
+slave_id: 9

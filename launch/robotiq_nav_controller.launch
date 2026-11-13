@@ -25,6 +25,9 @@
 	<!-- restart without asking whenever the gripper reports a fault that
 	     needs a reset: it drops what it holds, by itself -->
 	<arg name="auto_restart" default="false"/>
+	<!-- speeds, force, lead and button numbers; the end-to-end test brings its own
+	     (test/robotiq_e2e.yaml), so that tuning the gripper here does not change the test -->
+	<arg name="config" default="$(find wam_teleop)/config/robotiq_nav_controller.yaml"/>
 
 	<group ns="nav_controller_teleop">
 		<!-- respawn: a crashed controller node comes back by itself -->
@@ -42,7 +45,7 @@
 	     on from its opening, without activating it again -->
 	<node pkg="wam_teleop" type="robotiq_teleop" name="robotiq_teleop" output="screen" respawn="true" respawn_delay="1">
 		<remap from="joy" to="/nav_controller_teleop/joy"/>
-		<rosparam file="$(find wam_teleop)/config/robotiq_nav_controller.yaml" command="load"/>
+		<rosparam file="$(arg config)" command="load"/>
 		<param name="port" value="$(arg port)"/>
 		<param name="auto_activate" value="$(arg auto_activate)"/>
 		<param name="auto_restart" value="$(arg auto_restart)"/>

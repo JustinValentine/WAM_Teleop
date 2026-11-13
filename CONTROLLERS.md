@@ -115,7 +115,8 @@ model's inertial torque is limited to a few hertz.
   zero and gripper) leave 1.44 / 2.44 / 0.79 / 1.00 Nm there and are off
   by up to 1.4 Nm of gravity on J2. A cable-drive model fitted on the same
   runs (`lib/cable_params_slax_20261112.h`: 0.52 / 0.59 / 0.29 / 0.21 Nm) is
-  in the repository but not connected to the follower program yet.
+  what `follower --model cable` loads; it has not run on the arm (the
+  follower runs the legacy model unless that option is given).
 
 The leader sends its `ext` for J1-J4 to the follower. What the follower sends
 is in the next section.
